@@ -3,17 +3,26 @@
 import React from "react";
 import {createComponent} from '@lit/react';
 import {WelcomePage} from '@leandrodasilva/welcome-page';
+import {useRouter} from "next/navigation";
 
 const Widget = createComponent({
 	tagName: 'welcome-page',
 	elementClass: WelcomePage,
 	react: React,
 	events: {
-		onactivate: 'activate',
-		onchange: 'change',
+		submit: 'form-submit',
 	},
 });
 
 export default function Home() {
-  return <Widget/>
+	const router = useRouter();
+	const handleSubmit = (e: Event) => {
+		console.log("form-submit event:", e);
+		router.push('/playground');
+	}
+  return (
+		<Widget
+			submit={handleSubmit}
+		/>
+	)
 }
