@@ -1,0 +1,2 @@
+export const FLASH_INTERVAL = 150;
+export const FLASH_TOTAL_DURATION = FLASH_INTERVAL * 4;

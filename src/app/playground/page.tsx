@@ -2,56 +2,37 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtom } from "jotai";
-import type { ComponentProps } from "react";
 import FloorSelector, { type FloorSummary } from "@/components/FloorSelector";
 import { Tools } from "@/components/tools/index";
 import NavBar from "@/components/NavBar";
 import { moduleMakerConfigAtom } from "@/app/jotai/moduleMakerConfigAtom";
-import { DEFAULT_MODULE_LOTTIE, MODULE_LOTTIE_MAP } from "@/utils/moduleLottieMap";
+import {
+  DEFAULT_MODULE_LOTTIE,
+  MODULE_LOTTIE_MAP,
+  MODULE_BACKGROUND_MAP,
+  DEFAULT_MODULE_TEXTURES,
+} from "@/utils/moduleLottieMap";
+import type {
+  ToolsProps,
+  SelectedAsset,
+  FloorCell,
+  CellData,
+  FloorIdentifier,
+  FlashEffect,
+} from "@/types/playground";
+import { MODULE_COLOR_PALETTE, DEFAULT_MODULE_COLOR } from "@/constants/colors";
+import { FLASH_INTERVAL, FLASH_TOTAL_DURATION } from "@/constants/flash";
+import {
+  MIN_CELL_SIZE,
+  MAX_CELL_SIZE,
+  HEIGHT_RATIO,
+  MOBILE_RESERVED_HORIZONTAL,
+  DESKTOP_RESERVED_HORIZONTAL,
+  MOBILE_RESERVED_VERTICAL,
+  DESKTOP_RESERVED_VERTICAL,
+} from "@/utils/cellSizing";
 
-type ToolsProps = ComponentProps<typeof Tools>;
-type SelectedAsset = Parameters<ToolsProps["onSelectAsset"]>[0];
 
-type FloorCell = { x: number; y: number };
-
-type CellData = {
-  color: string;
-  assetId: SelectedAsset["id"];
-  assetType: SelectedAsset["type"];
-};
-
-type FloorIdentifier = number | string;
-
-type FlashEffect = {
-  floorKey: FloorIdentifier;
-  cellKey: string;
-  start: number;
-};
-
-const MODULE_COLOR_PALETTE = [
-  "#38bdf8",
-  "#f97316",
-  "#34d399",
-  "#facc15",
-  "#a855f7",
-  "#f472b6",
-  "#93c5fd",
-  "#fb7185",
-  "#22d3ee",
-];
-
-const DEFAULT_MODULE_COLOR = "#22d3ee";
-
-const FLASH_INTERVAL = 150;
-const FLASH_TOTAL_DURATION = FLASH_INTERVAL * 4;
-
-const MIN_CELL_SIZE = 22;
-const MAX_CELL_SIZE = 60;
-const HEIGHT_RATIO = 0.6;
-const MOBILE_RESERVED_HORIZONTAL = 110;
-const DESKTOP_RESERVED_HORIZONTAL = 200;
-const MOBILE_RESERVED_VERTICAL = 220;
-const DESKTOP_RESERVED_VERTICAL = 280;
 
 export default function Page() {
   const [config] = useAtom(moduleMakerConfigAtom);
@@ -91,6 +72,8 @@ export default function Page() {
   const [assetRegistryVersion, setAssetRegistryVersion] = useState(0);
   const [flashEffects, setFlashEffects] = useState<FlashEffect[]>([]);
   const [flashTick, setFlashTick] = useState(0);
+  const textureCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const [textureVersion, setTextureVersion] = useState(0);
 
   const selectedAsset = useMemo(() => {
     if (!selectedAssetId) return null;
@@ -105,6 +88,43 @@ export default function Page() {
       return [...filtered, { floorKey: targetFloorKey, cellKey, start: now }];
     });
   }, []);
+
+  const ensureTexture = useCallback(
+    (textureUrl: string) => {
+      const cache = textureCacheRef.current;
+      let image = cache.get(textureUrl);
+      if (image && image.complete) {
+        return image;
+      }
+      if (!image) {
+        image = new Image();
+        image.onload = () => {
+          setTextureVersion((prev) => prev + 1);
+        };
+        image.onerror = () => {
+          cache.delete(textureUrl);
+        };
+        image.src = textureUrl;
+        cache.set(textureUrl, image);
+      }
+      return image.complete ? image : null;
+    },
+    []
+  );
+
+  const resolveTextureForPlacement = useCallback(
+    (asset: SelectedAsset, newPlacedCount: number) => {
+      const textures = MODULE_BACKGROUND_MAP[asset.type] ?? DEFAULT_MODULE_TEXTURES;
+      if (!textures.length) {
+        return { textureUrl: DEFAULT_MODULE_TEXTURES[0], textureIndex: 0 };
+      }
+      const totalCapacity = Math.max(asset.quantity, textures.length);
+      const normalized = Math.max(0, Math.min(1, (newPlacedCount - 1) / totalCapacity));
+      const variantIndex = Math.min(textures.length - 1, Math.floor(normalized * textures.length));
+      return { textureUrl: textures[variantIndex], textureIndex: variantIndex };
+    },
+    []
+  );
 
   useEffect(() => {
     if (!flashEffects.length) return;
@@ -263,26 +283,46 @@ export default function Page() {
       ctx.stroke();
     }
 
+    const drawTexture = (
+      textureUrl: string,
+      gridX: number,
+      gridY: number,
+      fallbackColor: string,
+      alpha = 1
+    ) => {
+      const image = ensureTexture(textureUrl);
+      if (image) {
+        if (alpha !== 1) {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.drawImage(image, gridX * cellSize + 1, gridY * cellSize + 1, cellSize - 2, cellSize - 2);
+          ctx.restore();
+        } else {
+          ctx.drawImage(image, gridX * cellSize + 1, gridY * cellSize + 1, cellSize - 2, cellSize - 2);
+        }
+        return;
+      }
+      if (fallbackColor) {
+        ctx.fillStyle = fallbackColor;
+        ctx.fillRect(gridX * cellSize + 1, gridY * cellSize + 1, cellSize - 2, cellSize - 2);
+      }
+    };
+
     const cellEntries = Array.from(currentCells.entries()) as Array<[string, CellData]>;
     cellEntries.forEach(([key, cell]) => {
       const [x, y] = key.split(",").map(Number);
-      ctx.fillStyle = cell.color;
-      ctx.fillRect(x * cellSize + 1, y * cellSize + 1, cellSize - 2, cellSize - 2);
+      drawTexture(cell.textureUrl, x, y, cell.color);
     });
 
     if (movingGroup && isMovingGroup) {
-      ctx.save();
-      ctx.globalAlpha = 0.75;
       movingGroup.cells.forEach((cell) => {
-        const drawX = (cell.x + movingGroup.offset.x) * cellSize;
-        const drawY = (cell.y + movingGroup.offset.y) * cellSize;
-        ctx.fillStyle = cell.value.color;
-        ctx.fillRect(drawX + 1, drawY + 1, cellSize - 2, cellSize - 2);
+        const drawX = cell.x + movingGroup.offset.x;
+        const drawY = cell.y + movingGroup.offset.y;
+        drawTexture(cell.value.textureUrl, drawX, drawY, cell.value.color, 0.75);
       });
-      ctx.restore();
     }
 
-  const activeFlashes = flashEffects.filter((effect) => effect.floorKey === floorIdentifier);
+    const activeFlashes = flashEffects.filter((effect) => effect.floorKey === floorIdentifier);
     if (activeFlashes.length) {
       const timeNow = typeof performance !== "undefined" ? performance.now() : Date.now();
       activeFlashes.forEach((effect) => {
@@ -304,7 +344,18 @@ export default function Page() {
         ctx.restore();
       });
     }
-  }, [cellSize, currentCells, currentFloor, flashEffects, flashTick, floorIdentifier, isMovingGroup, movingGroup]);
+  }, [
+    cellSize,
+    currentCells,
+    currentFloor,
+    ensureTexture,
+    flashEffects,
+    flashTick,
+    floorIdentifier,
+    isMovingGroup,
+    movingGroup,
+    textureVersion,
+  ]);
 
   const floorBounds = useCallback(
     (cells: FloorCell[]) => {
@@ -405,8 +456,8 @@ export default function Page() {
         const existingCell = currentCells.get(key);
         if (!existingCell) return;
 
-  const assetToRestore = assetRegistryRef.current.get(existingCell.assetId);
-  assetToRestore?.restore();
+        const assetToRestore = assetRegistryRef.current.get(existingCell.assetId);
+        assetToRestore?.restore();
 
         if (selectedAsset && assetToRestore && assetToRestore.id === selectedAsset.id) {
           setAssetRemaining((prev) => Math.min(prev + 1, selectedAsset.quantity));
@@ -424,12 +475,18 @@ export default function Page() {
 
       if (selectedTool === "cut") {
         if (!selectedAsset || assetRemaining <= 0) return;
-        if (currentCells.has(key)) {
-          triggerCellFlash(floorIdentifier, key);
+        const occupiedCell = currentCells.get(key);
+        if (occupiedCell) {
+          if (occupiedCell.assetId !== selectedAsset.id) {
+            triggerCellFlash(floorIdentifier, key);
+          }
           return;
         }
 
-  selectedAsset.draw();
+        const placedBefore = selectedAsset.quantity - selectedAsset.remaining;
+        const { textureUrl, textureIndex } = resolveTextureForPlacement(selectedAsset, placedBefore + 1);
+
+        selectedAsset.draw();
         setAssetRemaining((prev) => Math.max(prev - 1, 0));
 
         setPaintedFloors((prev) => {
@@ -439,6 +496,8 @@ export default function Page() {
             color: selectedColor,
             assetId: selectedAsset.id,
             assetType: selectedAsset.type,
+            textureUrl,
+            textureIndex,
           };
           floorMap.set(key, cellValue);
           next.set(floorIdentifier, floorMap);
@@ -446,7 +505,17 @@ export default function Page() {
         });
       }
     },
-    [assetRemaining, currentCells, currentFloor, floorIdentifier, selectedAsset, selectedColor, selectedTool, triggerCellFlash]
+    [
+      assetRemaining,
+      currentCells,
+      currentFloor,
+      floorIdentifier,
+      resolveTextureForPlacement,
+      selectedAsset,
+      selectedColor,
+      selectedTool,
+      triggerCellFlash,
+    ]
   );
 
   const startInteraction = useCallback(

@@ -1,0 +1,7 @@
+export const MIN_CELL_SIZE = 22;
+export const MAX_CELL_SIZE = 60;
+export const HEIGHT_RATIO = 0.6;
+export const MOBILE_RESERVED_HORIZONTAL = 110;
+export const DESKTOP_RESERVED_HORIZONTAL = 200;
+export const MOBILE_RESERVED_VERTICAL = 220;
+export const DESKTOP_RESERVED_VERTICAL = 280;
