@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@leandrodasilva/welcome-page": "^2.0.2",
+    "@lit/react": "^1.0.8",
     "gridstack": "^12.3.3",
     "jotai": "^2.15.0",
     "next": "15.5.4",
