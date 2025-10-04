@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-// @ts-expect-error CSS import in Next.js app router
 import "./globals.css";
 import NavBar from "@/components/NavBar";
 import { JotaiProviders } from "@/components/JotaiProvider";
