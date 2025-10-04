@@ -503,7 +503,7 @@ export default function Page() {
     <>
       <NavBar />
       <div className="min-h-[100dvh] overflow-hidden bg-slate-950 pb-6 pt-14 text-cyan-100 md:pt-22">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 sm:px-6">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 sm:px-6">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between">
             <FloorSelector
               floors={floorsWithUsage}

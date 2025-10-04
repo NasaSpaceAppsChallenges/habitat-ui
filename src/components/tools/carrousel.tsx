@@ -80,55 +80,95 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
       const label = asset.label || createDisplayLabel(asset.type);
       const truncatedLabel = truncateLabel(label);
       const remaining = Math.max(asset.remaining, 0);
-      const isDisabled = remaining <= 0;
+      const totalQuantity = asset.quantity ?? 0;
+      const isComplete = totalQuantity > 0 && remaining === 0;
+      const isDepleted = remaining <= 0;
+      const disableButton = isDepleted;
+      const filledRatio = totalQuantity > 0 ? Math.min(Math.max((totalQuantity - remaining) / totalQuantity, 0), 1) : 0;
+      const waterStyle = {
+        height: `${filledRatio * 100}%`,
+        opacity: filledRatio > 0 ? 1 : 0.1,
+      };
       const color = asset.color ?? DEFAULT_COLOR;
       const animationSrc = asset.animationSrc ?? MODULE_LOTTIE_MAP[asset.type] ?? DEFAULT_MODULE_LOTTIE;
+      const checkAnimationSrc = "/json_files/check_success.lottie";
+
+      const buttonStateClass = disableButton
+        ? isComplete
+          ? "cursor-default border-emerald-300/60 bg-emerald-900/20 text-emerald-100/90 shadow-lg shadow-emerald-500/15"
+          : "cursor-not-allowed border-slate-700 bg-slate-800/70 text-slate-500"
+        : isActive
+        ? "border-cyan-300 bg-cyan-500/25 text-cyan-100 shadow"
+        : "border-cyan-500/40 bg-slate-950/80 text-cyan-100 hover:border-cyan-300 hover:bg-slate-900";
+
+      const highlightShadow = isComplete
+        ? "0 0 18px rgba(34,197,94,0.45)"
+        : !disableButton && isActive
+        ? `0 0 0 1px ${color}`
+        : undefined;
 
       return (
         <button
           type="button"
-          disabled={isDisabled}
-          className={`relative flex w-24 h-22 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border px-4 py-3 text-center transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${
-            isDisabled
-              ? "cursor-not-allowed border-slate-700 bg-slate-800/70 text-slate-500"
-              : isActive
-              ? "border-cyan-300 bg-cyan-500/25 text-cyan-100 shadow"
-              : "border-cyan-500/40 bg-slate-950/80 text-cyan-100 hover:border-cyan-300 hover:bg-slate-900"
-          }`}
-          style={{ boxShadow: !isDisabled && isActive ? `0 0 0 1px ${color}` : undefined }}
-          onClick={() => !isDisabled && onSelectAsset(asset)}
+          disabled={disableButton}
+          className={`relative flex w-24 h-26 shrink-0 flex-col items-center justify-center rounded-2xl border px-4 py-4 text-center transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${buttonStateClass}`}
+          style={{ boxShadow: highlightShadow }}
+          onClick={() => !disableButton && onSelectAsset(asset)}
           title={`${label} (${remaining})`}
           aria-label={`${label} (${remaining})`}
         >
-          <div className={`flex h-16 w-16 items-center justify-center ${isActive ? "module-pulse" : ""}`}>
-            <DotLottieReact
-              key={animationSrc}
-              src={animationSrc}
-              loop
-              autoplay
-              style={{ width: 56, height: 56 }}
-            />
-          </div>
           <span
-            className="text-[0.65rem] font-medium leading-tight text-cyan-200/90"
-            style={{
-              display: "-webkit-box",
-              WebkitBoxOrient: "vertical",
-              WebkitLineClamp: 2,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              wordBreak: "break-word",
-            }}
-          >
-            {truncatedLabel}
-          </span>
-          <span
-            className={`absolute -top-1 -right-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-slate-900/95 px-1 text-[0.55rem] font-semibold text-cyan-100 shadow ${
-              isDisabled ? "opacity-40" : ""
+            className={`absolute -top-1.5 -right-1.5 z-20 flex h-5 min-w-[1.35rem] items-center justify-center rounded-full bg-slate-900/95 px-1 text-[0.55rem] font-semibold text-cyan-100 shadow transition ${
+              disableButton && !isComplete ? "opacity-40" : ""
             }`}
           >
             {remaining}
           </span>
+
+          <div className={`module-water-overlay ${isComplete ? "opacity-85" : ""}`}>
+            <div className="module-water-fill" style={waterStyle} />
+          </div>
+
+          <div className={`relative z-10 flex w-full flex-1 flex-col items-center justify-center gap-2 ${isComplete ? "opacity-80" : ""}`}>
+            <div
+              className={`flex h-14 w-14 items-center justify-center rounded-full transition ${
+                isActive && !isComplete ? "module-pulse" : ""
+              } ${
+                isComplete ? "bg-emerald-500/15 ring-2 ring-emerald-400/60" : ""
+              }`}
+            >
+              {isComplete ? (
+                <DotLottieReact
+                  key={`check-${asset.id}`}
+                  src={checkAnimationSrc}
+                  loop
+                  autoplay
+                  style={{ width: 50, height: 50 }}
+                />
+              ) : (
+                <DotLottieReact
+                  key={`${animationSrc}-${remaining}`}
+                  src={animationSrc}
+                  loop
+                  autoplay
+                  style={{ width: 50, height: 50 }}
+                />
+              )}
+            </div>
+            <span
+              className="text-[0.75rem] font-semibold leading-tight text-cyan-100"
+              style={{
+                display: "-webkit-box",
+                WebkitBoxOrient: "vertical",
+                WebkitLineClamp: 2,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                wordBreak: "break-word",
+              }}
+            >
+              {truncatedLabel}
+            </span>
+          </div>
         </button>
       );
     },
