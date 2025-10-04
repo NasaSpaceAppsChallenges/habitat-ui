@@ -7,6 +7,7 @@ import FloorSelector, { type FloorSummary } from "@/components/FloorSelector";
 import { Tools } from "@/components/tools/index";
 import NavBar from "@/components/NavBar";
 import { moduleMakerConfigAtom } from "@/app/jotai/moduleMakerConfigAtom";
+import { DEFAULT_MODULE_LOTTIE, MODULE_LOTTIE_MAP } from "@/utils/moduleLottieMap";
 
 type ToolsProps = ComponentProps<typeof Tools>;
 type SelectedAsset = Parameters<ToolsProps["onSelectAsset"]>[0];
@@ -122,6 +123,7 @@ export default function Page() {
           quantity: module.numberOfBlocks ?? 0,
           label: module.name ?? module.type,
           color: moduleColorMap[module.type] ?? DEFAULT_MODULE_COLOR,
+          animationSrc: MODULE_LOTTIE_MAP[module.type] ?? DEFAULT_MODULE_LOTTIE,
         }))
         .filter((asset) => asset.quantity > 0),
     [rawModules, moduleColorMap]

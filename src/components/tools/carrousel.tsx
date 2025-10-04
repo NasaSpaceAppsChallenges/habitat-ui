@@ -1,10 +1,12 @@
 "use client";
 
-import { FC, useCallback, useEffect, useMemo, useRef } from "react";
+import { FC, useCallback, useEffect, useMemo, useState } from "react";
+import useEmblaCarousel from "embla-carousel-react";
 
-import type { IAsset, IconComponent } from "./types";
+import { DotLottieReact } from "@lottiefiles/dotlottie-react";
+import { DEFAULT_MODULE_LOTTIE, MODULE_LOTTIE_MAP } from "@/utils/moduleLottieMap";
 
-const LOOP_SEGMENTS = 3;
+import type { IAsset } from "./types";
 
 const truncateLabel = (value: string, maxLength = 18) =>
   value.length > maxLength ? `${value.slice(0, Math.max(0, maxLength - 3))}...` : value;
@@ -16,64 +18,22 @@ const createDisplayLabel = (value: string) =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 
-const BedroomIcon: IconComponent = ({ className }) => (
-  <svg
-    className={className}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.7}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M4 10h16" />
-    <path d="M4 14h16" />
-    <path d="M6 10V8a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
-    <path d="M18 10V8a2 2 0 0 0-2-2h-2" />
-    <path d="M4 18v-4" />
-    <path d="M20 18v-4" />
-  </svg>
-);
-
-const FoodIcon: IconComponent = ({ className }) => (
-  <svg
-    className={className}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.7}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M12 7c-2.5 0-4 2-4 4.5v5.5h8v-5.5C16 9 14.5 7 12 7Z" />
-    <path d="M9 7a3 3 0 0 1 3-3" />
-    <path d="M15 4s.5 2.5-1 3.5" />
-  </svg>
-);
-
-const DefaultModuleIcon: IconComponent = ({ className }) => (
-  <svg
-    className={className}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.7}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <rect x="6" y="6" width="12" height="12" rx="3" />
-  </svg>
-);
-
-const MODULE_ICON_CONFIG: Partial<Record<string, { icon: IconComponent; label: string }>> = {
-  bedroom: { icon: BedroomIcon, label: "Bedroom" },
-  food: { icon: FoodIcon, label: "Food" },
-};
-
 const DEFAULT_COLOR = "#22d3ee";
+
+const ArrowIcon: FC<{ direction: "left" | "right"; className?: string }> = ({ direction, className }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    {direction === "left" ? <path d="M15 6l-6 6 6 6" /> : <path d="M9 18l6-6-6-6" />}
+  </svg>
+);
 
 export type ToolsCarrouselProps = {
   assets: IAsset[];
@@ -82,62 +42,53 @@ export type ToolsCarrouselProps = {
 };
 
 export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId, onSelectAsset }) => {
-  const carouselRef = useRef<HTMLDivElement>(null);
+  const slides = useMemo(() => assets ?? [], [assets]);
+  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: false, align: "start", dragFree: true });
+  const [canScrollPrev, setCanScrollPrev] = useState(false);
+  const [canScrollNext, setCanScrollNext] = useState(false);
 
-  const loopedAssets = useMemo(() => {
-    if (!assets.length) return [] as Array<{ key: string; asset: IAsset }>;
-    return Array.from({ length: LOOP_SEGMENTS }, (_, segmentIndex) =>
-      assets.map((asset) => ({ key: `${segmentIndex}-${asset.id}`, asset }))
-    ).flat();
-  }, [assets]);
+  const updateScrollState = useCallback(() => {
+    if (!emblaApi) return;
+    setCanScrollPrev(emblaApi.canScrollPrev());
+    setCanScrollNext(emblaApi.canScrollNext());
+  }, [emblaApi]);
 
   useEffect(() => {
-    const container = carouselRef.current;
-    if (!container || !assets.length) return;
-    const syncPosition = () => {
-      const segmentWidth = container.scrollWidth / LOOP_SEGMENTS;
-      if (!Number.isFinite(segmentWidth) || segmentWidth <= 0) return;
-      container.scrollLeft = segmentWidth;
+    if (!emblaApi) return;
+    updateScrollState();
+    emblaApi.on("select", updateScrollState);
+    emblaApi.on("reInit", updateScrollState);
+    return () => {
+      emblaApi.off("select", updateScrollState);
+      emblaApi.off("reInit", updateScrollState);
     };
-    const frame = requestAnimationFrame(syncPosition);
-    return () => cancelAnimationFrame(frame);
-  }, [assets.length]);
+  }, [emblaApi, updateScrollState]);
 
-  const handleCarouselScroll = useCallback(() => {
-    const container = carouselRef.current;
-    if (!container || !assets.length) return;
-    const segmentWidth = container.scrollWidth / LOOP_SEGMENTS;
-    if (!Number.isFinite(segmentWidth) || segmentWidth <= 0) return;
-    const { scrollLeft } = container;
-    const minThreshold = segmentWidth * 0.65;
-    const maxThreshold = segmentWidth * 1.35;
-    if (scrollLeft < minThreshold) {
-      container.scrollLeft = scrollLeft + segmentWidth;
-    } else if (scrollLeft > maxThreshold) {
-      container.scrollLeft = scrollLeft - segmentWidth;
-    }
-  }, [assets.length]);
+  const scrollPrev = useCallback(() => {
+    if (!emblaApi) return;
+    emblaApi.scrollPrev();
+  }, [emblaApi]);
+
+  const scrollNext = useCallback(() => {
+    if (!emblaApi) return;
+    emblaApi.scrollNext();
+  }, [emblaApi]);
 
   const renderAssetButton = useCallback(
-    (asset: IAsset, key: string) => {
+    (asset: IAsset) => {
       const isActive = activeAssetId === asset.id;
-      const iconConfig = MODULE_ICON_CONFIG[asset.type] ?? {
-        icon: DefaultModuleIcon,
-        label: createDisplayLabel(asset.type),
-      };
-      const { icon: ModuleIcon } = iconConfig;
-      const label = asset.label || iconConfig.label;
+      const label = asset.label || createDisplayLabel(asset.type);
       const truncatedLabel = truncateLabel(label);
       const remaining = Math.max(asset.remaining, 0);
       const isDisabled = remaining <= 0;
       const color = asset.color ?? DEFAULT_COLOR;
+      const animationSrc = asset.animationSrc ?? MODULE_LOTTIE_MAP[asset.type] ?? DEFAULT_MODULE_LOTTIE;
 
       return (
         <button
-          key={key}
           type="button"
           disabled={isDisabled}
-          className={`relative flex w-20 h-24 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border px-4 py-3 text-center transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${
+          className={`relative flex w-24 h-22 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border px-4 py-3 text-center transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${
             isDisabled
               ? "cursor-not-allowed border-slate-700 bg-slate-800/70 text-slate-500"
               : isActive
@@ -149,7 +100,15 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
           title={`${label} (${remaining})`}
           aria-label={`${label} (${remaining})`}
         >
-          <ModuleIcon className="h-8 w-8" />
+          <div className={`flex h-16 w-16 items-center justify-center ${isActive ? "module-pulse" : ""}`}>
+            <DotLottieReact
+              key={animationSrc}
+              src={animationSrc}
+              loop
+              autoplay
+              style={{ width: 56, height: 56 }}
+            />
+          </div>
           <span
             className="text-[0.65rem] font-medium leading-tight text-cyan-200/90"
             style={{
@@ -179,15 +138,45 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-2 pb-3 sm:px-4 sm:pb-4">
       <div className="pointer-events-auto w-full max-w-6xl">
-        <div className="overflow-hidden rounded-3xl shadow-lg backdrop-blur">
-          {loopedAssets.length ? (
-            <div
-              ref={carouselRef}
-              onScroll={handleCarouselScroll}
-              className="flex w-full items-center gap-3 overflow-x-auto px-5 py-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {loopedAssets.map(({ key, asset }) => renderAssetButton(asset, key))}
-            </div>
+        <div className="relative overflow-hidden rounded-3xl shadow-lg backdrop-blur">
+          {slides.length ? (
+            <>
+              <div className="absolute inset-y-0 left-2 z-10 hidden items-center sm:flex">
+                <button
+                  type="button"
+                  onClick={scrollPrev}
+                  disabled={!canScrollPrev}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full border border-cyan-500/30 bg-slate-950/80 text-cyan-100 shadow transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${
+                    canScrollPrev ? "hover:border-cyan-300 hover:text-cyan-50" : "opacity-40"
+                  }`}
+                >
+                  <ArrowIcon direction="left" className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="absolute inset-y-0 right-2 z-10 hidden items-center sm:flex">
+                <button
+                  type="button"
+                  onClick={scrollNext}
+                  disabled={!canScrollNext}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full border border-cyan-500/30 bg-slate-950/80 text-cyan-100 shadow transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${
+                    canScrollNext ? "hover:border-cyan-300 hover:text-cyan-50" : "opacity-40"
+                  }`}
+                >
+                  <ArrowIcon direction="right" className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="px-4 py-4">
+                <div className="overflow-hidden" ref={emblaRef}>
+                  <div className="flex w-full gap-3">
+                    {slides.map((asset) => (
+                      <div key={asset.id} className="flex-[0_0_auto]">
+                        {renderAssetButton(asset)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
           ) : (
             <div className="flex h-16 w-full items-center justify-center text-xs text-cyan-300/80 sm:text-sm">
               Nenhum módulo disponível

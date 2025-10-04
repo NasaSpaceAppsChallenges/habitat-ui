@@ -1,26 +1,23 @@
 "use client";
 
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { ToolsCarrousel } from "./carrousel";
 import type { Asset, AssetType, IAsset, ITool, IconComponent, ToolName } from "./types";
 import { toolNames } from "./types";
 
-const assetColorMap: Record<AssetType, string> = {
-  bedroom: "#38bdf8",
-  food: "#f97316",
-  kitchen: "#fb7185",
-  living_room: "#60a5fa",
-  laboratory: "#a855f7",
-  workshop: "#facc15",
-  storage: "#34d399",
-  life_support: "#22d3ee",
-  communications: "#f97316",
-  exercise: "#fbbf24",
-  medical: "#f472b6",
-  common_area: "#93c5fd",
-  bathroom: "#86efac",
+const assetColorMap: Partial<Record<AssetType, string>> = {
+  private_crew_quarters: "#38bdf8",
+  common_kitchen_and_mess: "#f97316",
+  work_command_station: "#facc15",
+  multipurpose_science_medical_area: "#a855f7",
+  dedicated_storage_logistics: "#34d399",
+  radiation_shelter: "#22d3ee",
+  dedicated_wcs: "#86efac",
+  full_hygiene_station: "#f472b6",
+  permanent_exercise_area: "#fbbf24",
 };
 
 const formatLabel = (value: string) =>
@@ -99,8 +96,31 @@ export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, on
   const [activeTool, setActiveTool] = useState<ToolName | null>(null);
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  const [menuOrientation, setMenuOrientation] = useState<{ horizontal: "left" | "right"; vertical: "up" | "down" }>(
+    {
+      horizontal: "left",
+      vertical: "down",
+    }
+  );
 
   const boundaryRef = useRef<HTMLDivElement>(null);
+  const buttonContainerRef = useRef<HTMLDivElement>(null);
+
+  const updateMenuOrientation = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const element = buttonContainerRef.current;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    const horizontal = rect.left < window.innerWidth / 2 ? "right" : "left";
+    const vertical = rect.top > window.innerHeight / 2 ? "up" : "down";
+
+    setMenuOrientation((prev) => {
+      if (prev.horizontal === horizontal && prev.vertical === vertical) {
+        return prev;
+      }
+      return { horizontal, vertical };
+    });
+  }, []);
 
   const assetCount = incomingAssets.length;
 
@@ -116,7 +136,8 @@ export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, on
       const drawn = drawed[index]?.[asset.type] ?? 0;
       const remaining = Math.max(asset.quantity - drawn, 0);
       const label = asset.label ?? formatLabel(asset.type);
-      const color = asset.color ?? assetColorMap[asset.type] ?? "#22d3ee";
+  const color = asset.color ?? assetColorMap[asset.type] ?? "#22d3ee";
+  const animationSrc = asset.animationSrc;
 
       const draw = () => {
         setDrawed((prev) => {
@@ -140,6 +161,7 @@ export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, on
         label,
         color,
         draw,
+        animationSrc,
       } satisfies IAsset;
     });
   }, [incomingAssets, drawed]);
@@ -151,6 +173,14 @@ export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, on
       setActiveAssetId(null);
     }
   }, [assets, activeAssetId]);
+
+  useEffect(() => {
+    updateMenuOrientation();
+    if (typeof window === "undefined") return;
+    const handleResize = () => updateMenuOrientation();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [updateMenuOrientation]);
 
   const handleSelectTool = useCallback(
     (toolName: ToolName) => {
@@ -171,6 +201,11 @@ export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, on
     },
     [onSelectAsset]
   );
+
+  const handleTogglePalette = useCallback(() => {
+    updateMenuOrientation();
+    setIsPaletteOpen((prev) => !prev);
+  }, [updateMenuOrientation]);
 
   const renderToolButton = useCallback(
     (toolName: ToolName) => {
@@ -198,22 +233,72 @@ export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, on
     [activeTool, handleSelectTool]
   );
 
+  const horizontalPositionClass =
+    menuOrientation.horizontal === "left" ? "right-full" : "left-full";
+  const verticalPositionClass =
+    menuOrientation.vertical === "up" ? "bottom-full" : "top-full";
+  const stackDirectionClass = menuOrientation.vertical === "up" ? "flex-col-reverse" : "flex-col";
+
+  const menuInitialOffset = {
+    x: menuOrientation.horizontal === "left" ? 12 : -12,
+    y: menuOrientation.vertical === "up" ? -12 : 12,
+  };
+
+  const pointerBaseClass =
+    "relative after:absolute after:content-[''] after:h-3 after:w-3 after:-z-10 after:rotate-45 after:bg-slate-950/95 after:border after:border-cyan-400/50 after:shadow-[0_0_16px_rgba(20,184,166,0.45)] after:transition-all after:duration-150";
+
+  const pointerPositionClass = (() => {
+    const key = `${menuOrientation.horizontal}-${menuOrientation.vertical}` as const;
+    switch (key) {
+      case "left-down":
+        return "after:-right-[0.35rem] after:top-1/2 after:-translate-y-1/2";
+      case "left-up":
+        return "after:-right-[0.35rem] after:top-1/2 after:-translate-y-1/2";
+      case "right-down":
+        return "after:-left-[0.35rem] after:top-1/2 after:-translate-y-1/2";
+      case "right-up":
+        return "after:-left-[0.35rem] after:top-1/2 after:-translate-y-1/2";
+      default:
+        return "after:-right-[0.35rem] after:top-1/2 after:-translate-y-1/2";
+    }
+  })();
+
+  const paletteOffsetStyle = useMemo<CSSProperties>(() => {
+    const offset = 10; // px
+    const style: CSSProperties = {};
+    if (menuOrientation.horizontal === "left") {
+      style.marginRight = `-${offset}px`;
+    }
+    if (menuOrientation.horizontal === "right") {
+      style.marginLeft = `-${offset}px`;
+    }
+    if (menuOrientation.vertical === "up") {
+      style.marginBottom = `-${offset}px`;
+    }
+    if (menuOrientation.vertical === "down") {
+      style.marginTop = `-${offset}px`;
+    }
+    return style;
+  }, [menuOrientation]);
+
   return (
     <>
       <div ref={boundaryRef} className="pointer-events-none fixed inset-0 z-40" />
 
       <motion.div
-        className="pointer-events-auto fixed right-4 top-[45%] z-50"
+        className="pointer-events-auto fixed right-4 top-[32%] z-50"
         drag
         dragMomentum={false}
         dragElastic={0.2}
         dragConstraints={boundaryRef}
+        onDrag={updateMenuOrientation}
+        onDragEnd={updateMenuOrientation}
       >
-        <div className="relative">
+        <div ref={buttonContainerRef} className="relative">
           <button
             type="button"
             className="flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-300/70 bg-gradient-to-br from-amber-500 via-orange-500 to-rose-600 text-white shadow-lg shadow-amber-500/30 transition focus:outline-none focus:ring-2 focus:ring-amber-200/70"
-            onClick={() => setIsPaletteOpen((prev) => !prev)}
+            onClick={handleTogglePalette}
             aria-label="Ferramentas"
           >
             <WrenchIcon className="h-7 w-7" />
@@ -223,11 +308,12 @@ export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, on
             {isPaletteOpen && (
               <motion.div
                 key="tool-palette"
-                initial={{ opacity: 0, x: 12, scale: 0.95 }}
-                animate={{ opacity: 1, x: 0, scale: 1 }}
-                exit={{ opacity: 0, x: 12, scale: 0.95 }}
+                initial={{ opacity: 0, x: menuInitialOffset.x, y: menuInitialOffset.y, scale: 0.94 }}
+                animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+                exit={{ opacity: 0, x: menuInitialOffset.x, y: menuInitialOffset.y, scale: 0.94 }}
                 transition={{ duration: 0.18, ease: "easeOut" }}
-                className="absolute right-full top-1/2 z-10 mr-3 flex -translate-y-1/2 flex-col gap-2 rounded-2xl border border-cyan-500/30 bg-slate-950/95 p-3 text-cyan-100 shadow-2xl backdrop-blur"
+                className={`absolute z-10 flex ${stackDirectionClass} gap-1 rounded-2xl border border-cyan-500/30 bg-slate-950/95 px-3 py-2.5 text-cyan-100 shadow-2xl backdrop-blur ${pointerBaseClass} ${pointerPositionClass} ${horizontalPositionClass} ${verticalPositionClass}`}
+                style={paletteOffsetStyle}
               >
                 {toolNames.map(renderToolButton)}
               </motion.div>

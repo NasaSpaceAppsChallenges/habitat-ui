@@ -193,6 +193,21 @@ body {
   animation: pulseSlower 18s ease-in-out infinite;
 }
 
+@keyframes modulePulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(56, 189, 248, 0.25));
+  }
+  50% {
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.55));
+  }
+}
+
+.module-pulse {
+  animation: modulePulse 1.8s ease-in-out infinite;
+}
+
 /* Efeitos de brilho nos botões */
 .group:hover {
   box-shadow: 0 0 30px rgba(59, 130, 246, 0.6), 0 0 60px rgba(59, 130, 246, 0.3);

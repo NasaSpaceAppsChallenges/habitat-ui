@@ -1,6 +1,6 @@
 import { atom } from "jotai";
 
-import missionModel from "@/json-model.json" assert { type: "json" };
+import missionModel from "../../json-model.json" assert { type: "json" };
 
 export type HabitatFloor = {
   level: number;
@@ -9,19 +9,15 @@ export type HabitatFloor = {
 };
 
 export type ModuleTypes =
-  | "kitchen"
-  | "living_room"
-  | "bedroom"
-  | "bathroom"
-  | "laboratory"
-  | "workshop"
-  | "storage"
-  | "communications"
-  | "life_support"
-  | "exercise"
-  | "medical"
-  | "common_area"
-  | (string & {});
+  | "private_crew_quarters"
+  | "common_kitchen_and_mess"
+  | "work_command_station"
+  | "multipurpose_science_medical_area"
+  | "dedicated_storage_logistics"
+  | "radiation_shelter"
+  | "dedicated_wcs"
+  | "full_hygiene_station"
+  | "permanent_exercise_area";
 
 export type ModuleRelationship = {
   uuid: string;

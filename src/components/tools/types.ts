@@ -1,5 +1,7 @@
 import type { FC } from "react";
 
+import type { ModuleTypes } from "@/app/jotai/moduleMakerConfigAtom";
+
 export const toolNames = ["erase", "move"] as const;
 
 export type ToolName = (typeof toolNames)[number];
@@ -8,13 +10,14 @@ export interface ITool {
   name: ToolName;
 }
 
-export type AssetType = string;
+export type AssetType = ModuleTypes;
 
 export interface Asset {
   type: AssetType;
   quantity: number;
   label?: string;
   color?: string;
+  animationSrc?: string;
 }
 
 export interface IAsset {
@@ -24,6 +27,7 @@ export interface IAsset {
   remaining: number;
   label: string;
   color?: string;
+  animationSrc?: string;
   draw: () => void;
 }
 

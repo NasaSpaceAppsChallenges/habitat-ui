@@ -11,6 +11,9 @@
   "dependencies": {
     "@leandrodasilva/welcome-page": "2.3.0",
     "@lit/react": "^1.0.8",
+    "@lottiefiles/dotlottie-react": "^0.17.4",
+    "embla-carousel": "^8.6.0",
+    "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.23.22",
     "gridstack": "^12.3.3",
     "jotai": "^2.15.0",
