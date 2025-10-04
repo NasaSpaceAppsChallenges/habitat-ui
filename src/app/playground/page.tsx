@@ -332,11 +332,13 @@ export default function Page() {
       });
     }
 
+    const wallThickness = Math.max(4, cellSize * 0.22);
+
     const drawWallSegment = (
       textureUrl: string,
       cellX: number,
       cellY: number,
-      orientation: "up" | "down"
+      orientation: "horizontal" | "vertical"
     ) => {
       const image = ensureTexture(textureUrl);
       if (!image) {
@@ -346,10 +348,10 @@ export default function Page() {
       const anchorY = cellY * cellSize;
       ctx.save();
       ctx.beginPath();
-      if (orientation === "up") {
-        ctx.rect(anchorX, anchorY, cellSize, cellSize / 2);
+      if (orientation === "horizontal") {
+        ctx.rect(anchorX, anchorY, cellSize, wallThickness);
       } else {
-        ctx.rect(anchorX, anchorY, cellSize / 2, cellSize);
+        ctx.rect(anchorX, anchorY, wallThickness, cellSize);
       }
       ctx.clip();
       ctx.drawImage(image, anchorX, anchorY, cellSize, cellSize);
@@ -363,14 +365,14 @@ export default function Page() {
       if (y > 0) {
         const neighborAbove = currentCells.get(`${x},${y - 1}`);
         if (neighborAbove && neighborAbove.assetId !== cell.assetId) {
-          drawWallSegment(wallTextures.up, x, y, "up");
+          drawWallSegment(wallTextures.up, x, y, "horizontal");
         }
       }
 
       if (x > 0) {
         const neighborLeft = currentCells.get(`${x - 1},${y}`);
         if (neighborLeft && neighborLeft.assetId !== cell.assetId) {
-          drawWallSegment(wallTextures.down, x, y, "down");
+          drawWallSegment(wallTextures.down, x, y, "vertical");
         }
       }
     });
