@@ -1,44 +1,339 @@
 {
-    "missionName": "Sample Mission",
-    "missionDescription": "This is a sample mission description.",
+    "missionName": "Aurora Outpost",
+    "missionDescription": "Orbital habitat focused on long-duration crew wellness and research.",
     "habitat_floors": [
         {
             "level": 1,
-            "x_length": 12,
-            "y_length": 8
+            "x_length": 16,
+            "y_length": 12
         },
         {
             "level": 2,
-            "x_length": 8,
-            "y_length": 8
+            "x_length": 12,
+            "y_length": 12
         },
         {
             "level": 3,
-            "x_length": 6,
-            "y_length": 10
+            "x_length": 10,
+            "y_length": 8
+        },
+        {
+            "level": 4,
+            "x_length": 8,
+            "y_length": 6
         }
     ],
     "modules": [
         {
-            "numberofBlocks": 10,
-            "type": "kitchen",
-            "uuid": "new Guid()",
-            "name": "Modern Kitchen",
-            "description": "A sleek modern kitchen module.",
+            "uuid": "module-life-support-core",
+            "type": "life_support",
+            "name": "Life Support Core",
+            "description": "Regulates air, water, and thermal loops for the habitat.",
+            "numberofBlocks": 14,
             "goodWith": [
                 {
-                    "uuid": "new Guid()",
+                    "uuid": "module-kitchen-aurora",
                     "type": "kitchen",
-                    "reason": "complementary",
+                    "reason": "Shared water recycling feed reduces resource strain.",
+                    "positivePoints": 3
+                },
+                {
+                    "uuid": "module-medical-bay",
+                    "type": "medical",
+                    "reason": "Provides redundant oxygen routing for emergency care.",
+                    "positivePoints": 2
+                }
+            ],
+            "badWith": [
+                {
+                    "uuid": "module-lab-bio",
+                    "type": "laboratory",
+                    "reason": "Bio lab exhaust risks contaminating life support filters.",
+                    "negativePoints": 2
+                }
+            ]
+        },
+        {
+            "uuid": "module-kitchen-aurora",
+            "type": "kitchen",
+            "name": "Aurora Galley",
+            "description": "High-efficiency kitchen with hydroponic prep stations.",
+            "numberofBlocks": 10,
+            "goodWith": [
+                {
+                    "uuid": "module-storage-core",
+                    "type": "storage",
+                    "reason": "Direct dry storage access shortens prep cycles.",
+                    "positivePoints": 2
+                },
+                {
+                    "uuid": "module-life-support-core",
+                    "type": "life_support",
+                    "reason": "Reuses greywater from kitchen sinks efficiently.",
                     "positivePoints": 1
                 }
             ],
             "badWith": [
                 {
-                    "uuid": "new Guid()",
+                    "uuid": "module-lab-bio",
+                    "type": "laboratory",
+                    "reason": "Cross-contamination risk from open culture benches.",
+                    "negativePoints": 2
+                }
+            ]
+        },
+        {
+            "uuid": "module-living-garden",
+            "type": "living_room",
+            "name": "Garden Commons",
+            "description": "Social hub surrounded by adaptive plant walls.",
+            "numberofBlocks": 8,
+            "goodWith": [
+                {
+                    "uuid": "module-exercise-halo",
+                    "type": "exercise",
+                    "reason": "Shared mindfulness and cooldown routines.",
+                    "positivePoints": 1
+                },
+                {
+                    "uuid": "module-bed-crew",
+                    "type": "bedroom",
+                    "reason": "Nearby quiet lounge supports crew rest cycles.",
+                    "positivePoints": 2
+                }
+            ],
+            "badWith": [
+                {
+                    "uuid": "module-workshop-atrium",
+                    "type": "workshop",
+                    "reason": "Tool noise disrupts communal relaxation.",
+                    "negativePoints": 2
+                }
+            ]
+        },
+        {
+            "uuid": "module-bed-crew",
+            "type": "bedroom",
+            "name": "Crew Quarters Alpha",
+            "description": "Private sleeping pods with adjustable circadian lighting.",
+            "numberofBlocks": 9,
+            "goodWith": [
+                {
+                    "uuid": "module-bath-hygiene",
+                    "type": "bathroom",
+                    "reason": "Immediate hygiene access improves turnaround times.",
+                    "positivePoints": 2
+                },
+                {
+                    "uuid": "module-living-garden",
                     "type": "living_room",
-                    "reason": "conflicting",
+                    "reason": "Quiet adjacent social space for wind-down routines.",
+                    "positivePoints": 1
+                }
+            ],
+            "badWith": [
+                {
+                    "uuid": "module-workshop-atrium",
+                    "type": "workshop",
+                    "reason": "Vibration from fabrication equipment disturbs rest.",
+                    "negativePoints": 2
+                }
+            ]
+        },
+        {
+            "uuid": "module-bath-hygiene",
+            "type": "bathroom",
+            "name": "Hygiene Suite",
+            "description": "Water-efficient hygiene systems with smart filtration.",
+            "numberofBlocks": 6,
+            "goodWith": [
+                {
+                    "uuid": "module-bed-crew",
+                    "type": "bedroom",
+                    "reason": "Short routing between rest and hygiene cycles.",
+                    "positivePoints": 2
+                }
+            ],
+            "badWith": [
+                {
+                    "uuid": "module-storage-core",
+                    "type": "storage",
+                    "reason": "Humidity requires additional sealing for stored goods.",
                     "negativePoints": 1
+                }
+            ]
+        },
+        {
+            "uuid": "module-lab-bio",
+            "type": "laboratory",
+            "name": "Bio Lab Nexus",
+            "description": "Bio research suite with containment and growth chambers.",
+            "numberofBlocks": 11,
+            "goodWith": [
+                {
+                    "uuid": "module-medical-bay",
+                    "type": "medical",
+                    "reason": "Shares diagnostic tools and sterile corridors.",
+                    "positivePoints": 3
+                }
+            ],
+            "badWith": [
+                {
+                    "uuid": "module-kitchen-aurora",
+                    "type": "kitchen",
+                    "reason": "Food safety regulations require separation.",
+                    "negativePoints": 3
+                },
+                {
+                    "uuid": "module-living-garden",
+                    "type": "living_room",
+                    "reason": "High traffic conflicts with sterile access protocols.",
+                    "negativePoints": 2
+                }
+            ]
+        },
+        {
+            "uuid": "module-storage-core",
+            "type": "storage",
+            "name": "Central Storage Vault",
+            "description": "Climate-controlled storage for supplies and equipment.",
+            "numberofBlocks": 7,
+            "goodWith": [
+                {
+                    "uuid": "module-kitchen-aurora",
+                    "type": "kitchen",
+                    "reason": "Keeps consumables within short reach of food prep.",
+                    "positivePoints": 2
+                },
+                {
+                    "uuid": "module-workshop-atrium",
+                    "type": "workshop",
+                    "reason": "Shared inventory for fabrication materials.",
+                    "positivePoints": 1
+                }
+            ],
+            "badWith": [
+                {
+                    "uuid": "module-bath-hygiene",
+                    "type": "bathroom",
+                    "reason": "Moisture impacts long-term storage conditions.",
+                    "negativePoints": 2
+                }
+            ]
+        },
+        {
+            "uuid": "module-workshop-atrium",
+            "type": "workshop",
+            "name": "Engineering Workshop",
+            "description": "Fabrication bay for repairs and rapid prototyping.",
+            "numberofBlocks": 8,
+            "goodWith": [
+                {
+                    "uuid": "module-storage-core",
+                    "type": "storage",
+                    "reason": "Direct access to spare parts and tools.",
+                    "positivePoints": 2
+                },
+                {
+                    "uuid": "module-life-support-core",
+                    "type": "life_support",
+                    "reason": "Quick maintenance on life support subsystems.",
+                    "positivePoints": 1
+                }
+            ],
+            "badWith": [
+                {
+                    "uuid": "module-bed-crew",
+                    "type": "bedroom",
+                    "reason": "Noise and vibration impact crew sleep.",
+                    "negativePoints": 3
+                }
+            ]
+        },
+        {
+            "uuid": "module-communications-array",
+            "type": "communications",
+            "name": "Communications Array Hub",
+            "description": "Long-range communications suite with antenna control.",
+            "numberofBlocks": 5,
+            "goodWith": [
+                {
+                    "uuid": "module-life-support-core",
+                    "type": "life_support",
+                    "reason": "Shares power conditioning with life support grid.",
+                    "positivePoints": 1
+                },
+                {
+                    "uuid": "module-medical-bay",
+                    "type": "medical",
+                    "reason": "Real-time telemetry uplink for med support.",
+                    "positivePoints": 2
+                }
+            ],
+            "badWith": [
+                {
+                    "uuid": "module-workshop-atrium",
+                    "type": "workshop",
+                    "reason": "Electromagnetic interference from heavy tools.",
+                    "negativePoints": 2
+                }
+            ]
+        },
+        {
+            "uuid": "module-exercise-halo",
+            "type": "exercise",
+            "name": "Halo Fitness Ring",
+            "description": "Rotational exercise loop with adjustable resistance.",
+            "numberofBlocks": 9,
+            "goodWith": [
+                {
+                    "uuid": "module-living-garden",
+                    "type": "living_room",
+                    "reason": "Shared recovery space encourages crew wellness.",
+                    "positivePoints": 2
+                },
+                {
+                    "uuid": "module-medical-bay",
+                    "type": "medical",
+                    "reason": "Provides proximity for injury monitoring.",
+                    "positivePoints": 1
+                }
+            ],
+            "badWith": [
+                {
+                    "uuid": "module-bed-crew",
+                    "type": "bedroom",
+                    "reason": "Noise from equipment during rest periods.",
+                    "negativePoints": 2
+                }
+            ]
+        },
+        {
+            "uuid": "module-medical-bay",
+            "type": "medical",
+            "name": "Medical Bay Aegis",
+            "description": "Advanced care unit with surgical and triage zones.",
+            "numberofBlocks": 10,
+            "goodWith": [
+                {
+                    "uuid": "module-life-support-core",
+                    "type": "life_support",
+                    "reason": "High-priority oxygen redundancy for patients.",
+                    "positivePoints": 3
+                },
+                {
+                    "uuid": "module-exercise-halo",
+                    "type": "exercise",
+                    "reason": "Supports physiotherapy protocols.",
+                    "positivePoints": 2
+                }
+            ],
+            "badWith": [
+                {
+                    "uuid": "module-workshop-atrium",
+                    "type": "workshop",
+                    "reason": "Particulate debris conflicts with sterile requirements.",
+                    "negativePoints": 2
                 }
             ]
         }

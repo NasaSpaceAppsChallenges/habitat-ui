@@ -236,3 +236,12 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #2d3748;
 }
+
+/* Oculta o botão indicador do Turbopack durante o desenvolvimento */
+#__next-build-watcher,
+#__next-build-watcher button,
+#__next-build-indicator,
+#devtools-indicator,
+#__next-build-error {
+  display: none !important;
+}

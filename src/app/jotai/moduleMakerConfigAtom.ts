@@ -1,6 +1,6 @@
 import { atom } from "jotai";
 
-import missionModel from "@/json-model.json";
+import missionModel from "@/json-model.json" assert { type: "json" };
 
 export type HabitatFloor = {
   level: number;

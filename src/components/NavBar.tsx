@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from "react";
 
 export default function NavBar() {
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
-  const [autoPlayFailed, setAutoPlayFailed] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const toggleMusic = () => {
@@ -17,12 +16,10 @@ export default function NavBar() {
         audioRef.current
           .play()
           .then(() => {
-            setAutoPlayFailed(false);
             setIsMusicPlaying(true);
           })
           .catch((error) => {
             console.error("Erro ao tocar música:", error);
-            setAutoPlayFailed(true);
             setIsMusicPlaying(false);
           });
       }
@@ -38,10 +35,8 @@ export default function NavBar() {
       try {
         await audio.play();
         setIsMusicPlaying(true);
-        setAutoPlayFailed(false);
       } catch (error) {
         console.warn("Autoplay bloqueado pelo navegador:", error);
-        setAutoPlayFailed(true);
         setIsMusicPlaying(false);
       }
     };

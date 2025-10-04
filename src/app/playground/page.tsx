@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtom } from "jotai";
 import type { ComponentProps } from "react";
-import { Tools } from "@/components/Tools";
+import FloorSelector, { type FloorSummary } from "@/components/FloorSelector";
+import { Tools } from "@/components/tools/index";
 import NavBar from "@/components/NavBar";
 import { moduleMakerConfigAtom } from "@/app/jotai/moduleMakerConfigAtom";
 
@@ -12,10 +13,19 @@ type SelectedAsset = Parameters<ToolsProps["onSelectAsset"]>[0];
 
 type FloorCell = { x: number; y: number };
 
-const assetPalette: Record<string, string> = {
-  bedroom: "#38bdf8",
-  food: "#f97316",
-};
+const MODULE_COLOR_PALETTE = [
+  "#38bdf8",
+  "#f97316",
+  "#34d399",
+  "#facc15",
+  "#a855f7",
+  "#f472b6",
+  "#93c5fd",
+  "#fb7185",
+  "#22d3ee",
+];
+
+const DEFAULT_MODULE_COLOR = "#22d3ee";
 
 const MIN_CELL_SIZE = 22;
 const MAX_CELL_SIZE = 60;
@@ -27,7 +37,26 @@ const DESKTOP_RESERVED_VERTICAL = 280;
 
 export default function Page() {
   const [config] = useAtom(moduleMakerConfigAtom);
-  const floors = config[0]?.floors ?? [];
+  const { habitat_floors: rawFloors, habitat_modules: rawModules } = config;
+  const floors = useMemo(
+    () =>
+      (rawFloors ?? []).map((floor) => ({
+        level: floor.level,
+        x: floor.x_length,
+        y: floor.y_length,
+      })),
+    [rawFloors]
+  );
+  const moduleColorMap = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    (rawModules ?? []).forEach((module, index) => {
+      if (!module?.type) return;
+      if (!map[module.type]) {
+        map[module.type] = MODULE_COLOR_PALETTE[index % MODULE_COLOR_PALETTE.length];
+      }
+    });
+    return map;
+  }, [rawModules]);
   const [selectedFloorIndex, setSelectedFloorIndex] = useState(0);
   const currentFloor = floors[selectedFloorIndex] ?? floors[0];
   const floorKey = currentFloor?.level ?? selectedFloorIndex;
@@ -37,7 +66,7 @@ export default function Page() {
   const [paintedFloors, setPaintedFloors] = useState<Map<number, Map<string, string>>>(new Map());
   const [selectedTool, setSelectedTool] = useState<"cut" | "erase" | "move">("cut");
   const [selectedAsset, setSelectedAsset] = useState<SelectedAsset | null>(null);
-  const [selectedColor, setSelectedColor] = useState<string>(assetPalette.bedroom);
+  const [selectedColor, setSelectedColor] = useState<string>(DEFAULT_MODULE_COLOR);
   const [assetRemaining, setAssetRemaining] = useState<number>(0);
 
   const [cellSize, setCellSize] = useState<number>(32);
@@ -68,13 +97,48 @@ export default function Page() {
 
   const currentCells = useMemo(() => paintedFloors.get(floorKey) ?? new Map<string, string>(), [paintedFloors, floorKey]);
 
-  const assets = useMemo<ToolsProps["assets"]>(
-    () => [
-      { type: "bedroom", quantity: 6 },
-      { type: "food", quantity: 4 },
-    ],
-    []
+  const floorsWithUsage = useMemo<FloorSummary[]>(
+    () =>
+      floors.map((floor, index) => {
+        const floorKeyForUsage = floor.level ?? index;
+        const paintedCells = paintedFloors.get(floorKeyForUsage)?.size ?? 0;
+        const totalCells = Math.max(floor.x * floor.y, 0);
+        return {
+          level: floor.level,
+          x: floor.x,
+          y: floor.y,
+          paintedCells,
+          totalCells,
+        };
+      }),
+    [floors, paintedFloors]
   );
+
+  const assets = useMemo<ToolsProps["assets"]>(
+    () =>
+      (rawModules ?? [])
+        .map((module) => ({
+          type: module.type,
+          quantity: module.numberOfBlocks ?? 0,
+          label: module.name ?? module.type,
+          color: moduleColorMap[module.type] ?? DEFAULT_MODULE_COLOR,
+        }))
+        .filter((asset) => asset.quantity > 0),
+    [rawModules, moduleColorMap]
+  );
+
+  const defaultModuleColor = useMemo(() => {
+    if (!rawModules?.length) return DEFAULT_MODULE_COLOR;
+    const firstType = rawModules[0]?.type;
+    if (!firstType) return DEFAULT_MODULE_COLOR;
+    return moduleColorMap[firstType] ?? DEFAULT_MODULE_COLOR;
+  }, [moduleColorMap, rawModules]);
+
+  useEffect(() => {
+    if (selectedAsset) return;
+    if (selectedColor === defaultModuleColor) return;
+    setSelectedColor(defaultModuleColor);
+  }, [defaultModuleColor, selectedAsset, selectedColor]);
 
   const updateCellSize = useCallback(() => {
     if (typeof window === "undefined" || !currentFloor) return;
@@ -404,17 +468,23 @@ export default function Page() {
 
   const handleSelectTool: ToolsProps["onSelectTool"] = useCallback((tool) => {
     setSelectedTool(tool.name);
+    setSelectedAsset(null);
+    setAssetRemaining(0);
     setIsPainting(false);
     setMovingGroup(null);
     setIsMovingGroup(false);
   }, []);
 
-  const handleSelectAsset: ToolsProps["onSelectAsset"] = useCallback((asset) => {
-    setSelectedAsset(asset);
-    setSelectedColor(assetPalette[asset.type]);
-    setAssetRemaining(asset.remaining);
-    setSelectedTool("cut");
-  }, []);
+  const handleSelectAsset: ToolsProps["onSelectAsset"] = useCallback(
+    (asset) => {
+      setSelectedAsset(asset);
+      const nextColor = asset.color ?? moduleColorMap[asset.type] ?? DEFAULT_MODULE_COLOR;
+      setSelectedColor(nextColor);
+      setAssetRemaining(asset.remaining);
+      setSelectedTool("cut");
+    },
+    [moduleColorMap]
+  );
 
   if (!currentFloor) {
     return (
@@ -430,62 +500,41 @@ export default function Page() {
   return (
     <>
       <NavBar />
-      <div className="min-h-[100dvh] overflow-hidden bg-slate-950 pb-6 pt-18 text-cyan-100 md:pt-22">
+      <div className="min-h-[100dvh] overflow-hidden bg-slate-950 pb-6 pt-14 text-cyan-100 md:pt-22">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 sm:px-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex w-full flex-wrap items-center gap-3 rounded-2xl border border-cyan-500/20 bg-slate-900/80 px-4 py-3">
-            <label className="text-xs uppercase tracking-widest text-cyan-200/80 sm:text-sm">
-              Floor
-            </label>
-            <select
-              value={selectedFloorIndex}
-              onChange={(event) => setSelectedFloorIndex(Number(event.target.value))}
-              className="w-full max-w-[220px] rounded-xl border border-cyan-500/30 bg-slate-950 px-3 py-2 text-sm text-cyan-100 outline-none transition focus:border-cyan-300 sm:text-base"
-            >
-              {floors.map((floor, index) => (
-                <option key={floor.level ?? index} value={index}>
-                  Level {floor.level} — {floor.x} × {floor.y}
-                </option>
-              ))}
-            </select>
-            {selectedAsset ? (
-              <div className="ml-auto flex items-center gap-2 text-xs text-cyan-300 sm:text-sm">
-                <span className="inline-flex h-3 w-3 rounded-full" style={{ backgroundColor: selectedColor }} />
-                <span>
-                  {selectedAsset.type} · {assetRemaining} restantes
-                </span>
-              </div>
-            ) : (
-              <p className="ml-auto text-xs text-cyan-400/70 sm:text-sm">Selecione um asset para pintar</p>
-            )}
-          </div>
-
-          <div className="sm:self-start">
-            <Tools assets={assets} onSelectTool={handleSelectTool} onSelectAsset={handleSelectAsset} />
-          </div>
-        </div>
-
-  <div className="relative mx-auto w-full max-w-5xl rounded-3xl border border-cyan-500/20 bg-slate-900/70 px-2 pb-4 pt-2 shadow-xl">
-          <div
-            className="mx-auto w-full max-w-[90vw] overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-950/80"
-            style={{ maxWidth: boardPixelWidth || undefined, maxHeight: boardPixelHeight || undefined }}
-          >
-            <canvas
-              ref={canvasRef}
-              className="h-auto w-full touch-none"
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handlePointerUp}
-              onMouseLeave={() => {
-                if (isPainting || isMovingGroup) finishInteraction();
-              }}
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handlePointerUp}
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between">
+            <FloorSelector
+              floors={floorsWithUsage}
+              selectedFloorIndex={selectedFloorIndex}
+              onSelectFloor={setSelectedFloorIndex}
             />
+
+            <div className="sm:self-start">
+              <Tools assets={assets} onSelectTool={handleSelectTool} onSelectAsset={handleSelectAsset} />
+            </div>
+          </div>
+
+          <div className="relative mx-auto w-full max-w-5xl rounded-3xl border border-cyan-500/20 bg-slate-900/70 px-2 pb-4 pt-2 shadow-xl">
+            <div
+              className="mx-auto w-full max-w-[90vw] overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-950/80"
+              style={{ maxWidth: boardPixelWidth || undefined, maxHeight: boardPixelHeight || undefined }}
+            >
+              <canvas
+                ref={canvasRef}
+                className="h-auto w-full touch-none"
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handlePointerUp}
+                onMouseLeave={() => {
+                  if (isPainting || isMovingGroup) finishInteraction();
+                }}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handlePointerUp}
+              />
+            </div>
           </div>
         </div>
-      </div>
       </div>
     </>
   );
