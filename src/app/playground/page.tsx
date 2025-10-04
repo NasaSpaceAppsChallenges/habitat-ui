@@ -414,7 +414,7 @@ export default function Page() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 pb-16 pt-6 text-cyan-100">
+    <div className="min-h-screen bg-slate-950 pb-6 pt-18 text-cyan-100">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 sm:px-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex w-full flex-wrap items-center gap-3 rounded-2xl border border-cyan-500/20 bg-slate-900/80 px-4 py-3">
