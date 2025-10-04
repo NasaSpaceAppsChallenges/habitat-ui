@@ -4,22 +4,17 @@
     "habitat_floors": [
         {
             "level": 1,
-            "x_length": 16,
-            "y_length": 12
-        },
-        {
-            "level": 2,
-            "x_length": 12,
-            "y_length": 12
-        },
-        {
-            "level": 3,
-            "x_length": 10,
+            "x_length": 8,
             "y_length": 8
         },
         {
-            "level": 4,
+            "level": 2,
             "x_length": 8,
+            "y_length": 8
+        },
+        {
+            "level": 3,
+            "x_length": 6,
             "y_length": 6
         }
     ],

@@ -11,6 +11,8 @@ import {
   MODULE_LOTTIE_MAP,
   MODULE_BACKGROUND_MAP,
   DEFAULT_MODULE_TEXTURES,
+  MODULE_WALL_MAP,
+  DEFAULT_MODULE_WALLS,
 } from "@/utils/moduleLottieMap";
 import type {
   ToolsProps,
@@ -123,6 +125,12 @@ export default function Page() {
       const variantIndex = Math.min(textures.length - 1, Math.floor(normalized * textures.length));
       return { textureUrl: textures[variantIndex], textureIndex: variantIndex };
     },
+    []
+  );
+
+  const resolveWallTextures = useCallback(
+    (assetType: CellData["assetType"]) =>
+      MODULE_WALL_MAP[assetType as keyof typeof MODULE_WALL_MAP] ?? DEFAULT_MODULE_WALLS,
     []
   );
 
@@ -290,21 +298,23 @@ export default function Page() {
       fallbackColor: string,
       alpha = 1
     ) => {
+      const destX = gridX * cellSize;
+      const destY = gridY * cellSize;
       const image = ensureTexture(textureUrl);
       if (image) {
         if (alpha !== 1) {
           ctx.save();
           ctx.globalAlpha = alpha;
-          ctx.drawImage(image, gridX * cellSize + 1, gridY * cellSize + 1, cellSize - 2, cellSize - 2);
+          ctx.drawImage(image, destX, destY, cellSize, cellSize);
           ctx.restore();
         } else {
-          ctx.drawImage(image, gridX * cellSize + 1, gridY * cellSize + 1, cellSize - 2, cellSize - 2);
+          ctx.drawImage(image, destX, destY, cellSize, cellSize);
         }
         return;
       }
       if (fallbackColor) {
         ctx.fillStyle = fallbackColor;
-        ctx.fillRect(gridX * cellSize + 1, gridY * cellSize + 1, cellSize - 2, cellSize - 2);
+        ctx.fillRect(destX, destY, cellSize, cellSize);
       }
     };
 
@@ -321,6 +331,49 @@ export default function Page() {
         drawTexture(cell.value.textureUrl, drawX, drawY, cell.value.color, 0.75);
       });
     }
+
+    const drawWallSegment = (
+      textureUrl: string,
+      cellX: number,
+      cellY: number,
+      orientation: "up" | "down"
+    ) => {
+      const image = ensureTexture(textureUrl);
+      if (!image) {
+        return;
+      }
+      const anchorX = cellX * cellSize;
+      const anchorY = cellY * cellSize;
+      ctx.save();
+      ctx.beginPath();
+      if (orientation === "up") {
+        ctx.rect(anchorX, anchorY, cellSize, cellSize / 2);
+      } else {
+        ctx.rect(anchorX, anchorY, cellSize / 2, cellSize);
+      }
+      ctx.clip();
+      ctx.drawImage(image, anchorX, anchorY, cellSize, cellSize);
+      ctx.restore();
+    };
+
+    cellEntries.forEach(([key, cell]) => {
+      const [x, y] = key.split(",").map(Number);
+      const wallTextures = resolveWallTextures(cell.assetType);
+
+      if (y > 0) {
+        const neighborAbove = currentCells.get(`${x},${y - 1}`);
+        if (neighborAbove && neighborAbove.assetId !== cell.assetId) {
+          drawWallSegment(wallTextures.up, x, y, "up");
+        }
+      }
+
+      if (x > 0) {
+        const neighborLeft = currentCells.get(`${x - 1},${y}`);
+        if (neighborLeft && neighborLeft.assetId !== cell.assetId) {
+          drawWallSegment(wallTextures.down, x, y, "down");
+        }
+      }
+    });
 
     const activeFlashes = flashEffects.filter((effect) => effect.floorKey === floorIdentifier);
     if (activeFlashes.length) {
@@ -354,6 +407,7 @@ export default function Page() {
     floorIdentifier,
     isMovingGroup,
     movingGroup,
+    resolveWallTextures,
     textureVersion,
   ]);
 
