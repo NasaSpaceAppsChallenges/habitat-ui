@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtom } from "jotai";
 import type { ComponentProps } from "react";
 import { Tools } from "@/components/Tools";
+import NavBar from "@/components/NavBar";
 import { moduleMakerConfigAtom } from "@/app/jotai/moduleMakerConfigAtom";
 
 type ToolsProps = ComponentProps<typeof Tools>;
@@ -19,6 +20,10 @@ const assetPalette: Record<string, string> = {
 const MIN_CELL_SIZE = 22;
 const MAX_CELL_SIZE = 60;
 const HEIGHT_RATIO = 0.6;
+const MOBILE_RESERVED_HORIZONTAL = 110;
+const DESKTOP_RESERVED_HORIZONTAL = 200;
+const MOBILE_RESERVED_VERTICAL = 220;
+const DESKTOP_RESERVED_VERTICAL = 280;
 
 export default function Page() {
   const [config] = useAtom(moduleMakerConfigAtom);
@@ -74,8 +79,14 @@ export default function Page() {
   const updateCellSize = useCallback(() => {
     if (typeof window === "undefined" || !currentFloor) return;
     const { innerWidth, innerHeight } = window;
-    const maxWidth = innerWidth * 0.9;
-    const maxHeight = innerHeight * HEIGHT_RATIO;
+    const isMobile = innerWidth < 640;
+
+    const reservedHorizontal = isMobile ? MOBILE_RESERVED_HORIZONTAL : DESKTOP_RESERVED_HORIZONTAL;
+    const reservedVertical = isMobile ? MOBILE_RESERVED_VERTICAL : DESKTOP_RESERVED_VERTICAL;
+
+    const maxWidth = Math.max(innerWidth - reservedHorizontal, MIN_CELL_SIZE * currentFloor.x);
+    const maxHeight = Math.max(innerHeight - reservedVertical, MIN_CELL_SIZE * currentFloor.y, innerHeight * HEIGHT_RATIO);
+
     const sizeFromWidth = Math.floor(maxWidth / currentFloor.x);
     const sizeFromHeight = Math.floor(maxHeight / currentFloor.y);
     const computed = Math.max(
@@ -413,9 +424,14 @@ export default function Page() {
     );
   }
 
+  const boardPixelWidth = currentFloor ? currentFloor.x * cellSize : 0;
+  const boardPixelHeight = currentFloor ? currentFloor.y * cellSize : 0;
+
   return (
-    <div className="min-h-screen bg-slate-950 pb-6 pt-18 text-cyan-100">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 sm:px-6">
+    <>
+      <NavBar />
+      <div className="min-h-[100dvh] overflow-hidden bg-slate-950 pb-6 pt-18 text-cyan-100 md:pt-22">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 sm:px-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex w-full flex-wrap items-center gap-3 rounded-2xl border border-cyan-500/20 bg-slate-900/80 px-4 py-3">
             <label className="text-xs uppercase tracking-widest text-cyan-200/80 sm:text-sm">
@@ -450,7 +466,10 @@ export default function Page() {
         </div>
 
   <div className="relative mx-auto w-full max-w-5xl rounded-3xl border border-cyan-500/20 bg-slate-900/70 px-2 pb-4 pt-2 shadow-xl">
-          <div className="mx-auto w-full max-w-[90vw] overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-950/80">
+          <div
+            className="mx-auto w-full max-w-[90vw] overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-950/80"
+            style={{ maxWidth: boardPixelWidth || undefined, maxHeight: boardPixelHeight || undefined }}
+          >
             <canvas
               ref={canvasRef}
               className="h-auto w-full touch-none"
@@ -467,6 +486,7 @@ export default function Page() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

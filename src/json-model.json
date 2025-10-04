@@ -1,0 +1,46 @@
+{
+    "missionName": "Sample Mission",
+    "missionDescription": "This is a sample mission description.",
+    "habitat_floors": [
+        {
+            "level": 1,
+            "x_length": 12,
+            "y_length": 8
+        },
+        {
+            "level": 2,
+            "x_length": 8,
+            "y_length": 8
+        },
+        {
+            "level": 3,
+            "x_length": 6,
+            "y_length": 10
+        }
+    ],
+    "modules": [
+        {
+            "numberofBlocks": 10,
+            "type": "kitchen",
+            "uuid": "new Guid()",
+            "name": "Modern Kitchen",
+            "description": "A sleek modern kitchen module.",
+            "goodWith": [
+                {
+                    "uuid": "new Guid()",
+                    "type": "kitchen",
+                    "reason": "complementary",
+                    "positivePoints": 1
+                }
+            ],
+            "badWith": [
+                {
+                    "uuid": "new Guid()",
+                    "type": "living_room",
+                    "reason": "conflicting",
+                    "negativePoints": 1
+                }
+            ]
+        }
+    ]
+}
