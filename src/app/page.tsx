@@ -2,7 +2,6 @@
 
 import React from "react";
 import {createComponent} from '@lit/react';
-import '@leandrodasilva/welcome-page/slider-astrounauts';
 import {WelcomePage} from '@leandrodasilva/welcome-page';
 import {useRouter} from "next/navigation";
 

@@ -29,6 +29,7 @@ export interface IAsset {
   color?: string;
   animationSrc?: string;
   draw: () => void;
+  restore: () => void;
 }
 
 export type IconComponent = FC<{ className?: string }>;

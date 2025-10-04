@@ -14,6 +14,20 @@ type SelectedAsset = Parameters<ToolsProps["onSelectAsset"]>[0];
 
 type FloorCell = { x: number; y: number };
 
+type CellData = {
+  color: string;
+  assetId: SelectedAsset["id"];
+  assetType: SelectedAsset["type"];
+};
+
+type FloorIdentifier = number | string;
+
+type FlashEffect = {
+  floorKey: FloorIdentifier;
+  cellKey: string;
+  start: number;
+};
+
 const MODULE_COLOR_PALETTE = [
   "#38bdf8",
   "#f97316",
@@ -27,6 +41,9 @@ const MODULE_COLOR_PALETTE = [
 ];
 
 const DEFAULT_MODULE_COLOR = "#22d3ee";
+
+const FLASH_INTERVAL = 150;
+const FLASH_TOTAL_DURATION = FLASH_INTERVAL * 4;
 
 const MIN_CELL_SIZE = 22;
 const MAX_CELL_SIZE = 60;
@@ -61,34 +78,72 @@ export default function Page() {
   const [selectedFloorIndex, setSelectedFloorIndex] = useState(0);
   const currentFloor = floors[selectedFloorIndex] ?? floors[0];
   const floorKey = currentFloor?.level ?? selectedFloorIndex;
+  const floorIdentifier = floorKey as FloorIdentifier;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const [paintedFloors, setPaintedFloors] = useState<Map<number, Map<string, string>>>(new Map());
+  const [paintedFloors, setPaintedFloors] = useState<Map<FloorIdentifier, Map<string, CellData>>>(new Map());
   const [selectedTool, setSelectedTool] = useState<"cut" | "erase" | "move">("cut");
-  const [selectedAsset, setSelectedAsset] = useState<SelectedAsset | null>(null);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string>(DEFAULT_MODULE_COLOR);
   const [assetRemaining, setAssetRemaining] = useState<number>(0);
+  const assetRegistryRef = useRef<Map<string, SelectedAsset>>(new Map());
+  const [assetRegistryVersion, setAssetRegistryVersion] = useState(0);
+  const [flashEffects, setFlashEffects] = useState<FlashEffect[]>([]);
+  const [flashTick, setFlashTick] = useState(0);
+
+  const selectedAsset = useMemo(() => {
+    if (!selectedAssetId) return null;
+    void assetRegistryVersion;
+    return assetRegistryRef.current.get(selectedAssetId) ?? null;
+  }, [selectedAssetId, assetRegistryVersion]);
+
+  const triggerCellFlash = useCallback((targetFloorKey: FloorIdentifier, cellKey: string) => {
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    setFlashEffects((prev) => {
+      const filtered = prev.filter((effect) => !(effect.floorKey === targetFloorKey && effect.cellKey === cellKey));
+      return [...filtered, { floorKey: targetFloorKey, cellKey, start: now }];
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!flashEffects.length) return;
+    if (typeof window === "undefined") return;
+    const interval = window.setInterval(() => {
+      setFlashTick((prev) => prev + 1);
+    }, FLASH_INTERVAL / 2);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [flashEffects.length]);
+
+  useEffect(() => {
+    if (!flashEffects.length) return;
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const active = flashEffects.filter((effect) => now - effect.start <= FLASH_TOTAL_DURATION);
+    if (active.length !== flashEffects.length) {
+      setFlashEffects(active);
+    }
+  }, [flashEffects, flashTick]);
 
   const [cellSize, setCellSize] = useState<number>(32);
   const [isPainting, setIsPainting] = useState(false);
   const [isMovingGroup, setIsMovingGroup] = useState(false);
   const [moveAnchor, setMoveAnchor] = useState<FloorCell>({ x: 0, y: 0 });
   const [movingGroup, setMovingGroup] = useState<{
-    cells: FloorCell[];
-    color: string;
+    cells: Array<FloorCell & { value: CellData }>;
     offset: FloorCell;
   } | null>(null);
 
   useEffect(() => {
     if (!currentFloor) return;
     setPaintedFloors((prev) => {
-      if (prev.has(floorKey)) return prev;
+      if (prev.has(floorIdentifier)) return prev;
       const next = new Map(prev);
-      next.set(floorKey, new Map());
+      next.set(floorIdentifier, new Map());
       return next;
     });
-  }, [currentFloor, floorKey]);
+  }, [currentFloor, floorIdentifier]);
 
   useEffect(() => {
     setIsPainting(false);
@@ -96,7 +151,7 @@ export default function Page() {
     setMovingGroup(null);
   }, [selectedFloorIndex]);
 
-  const currentCells = useMemo(() => paintedFloors.get(floorKey) ?? new Map<string, string>(), [paintedFloors, floorKey]);
+  const currentCells = useMemo(() => paintedFloors.get(floorIdentifier) ?? new Map<string, CellData>(), [paintedFloors, floorIdentifier]);
 
   const floorsWithUsage = useMemo<FloorSummary[]>(
     () =>
@@ -208,25 +263,48 @@ export default function Page() {
       ctx.stroke();
     }
 
-    const cellEntries = Array.from(currentCells.entries());
-    cellEntries.forEach(([key, color]) => {
+    const cellEntries = Array.from(currentCells.entries()) as Array<[string, CellData]>;
+    cellEntries.forEach(([key, cell]) => {
       const [x, y] = key.split(",").map(Number);
-      ctx.fillStyle = color;
+      ctx.fillStyle = cell.color;
       ctx.fillRect(x * cellSize + 1, y * cellSize + 1, cellSize - 2, cellSize - 2);
     });
 
     if (movingGroup && isMovingGroup) {
       ctx.save();
       ctx.globalAlpha = 0.75;
-      ctx.fillStyle = movingGroup.color;
       movingGroup.cells.forEach((cell) => {
-        const x = (cell.x + movingGroup.offset.x) * cellSize;
-        const y = (cell.y + movingGroup.offset.y) * cellSize;
-        ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+        const drawX = (cell.x + movingGroup.offset.x) * cellSize;
+        const drawY = (cell.y + movingGroup.offset.y) * cellSize;
+        ctx.fillStyle = cell.value.color;
+        ctx.fillRect(drawX + 1, drawY + 1, cellSize - 2, cellSize - 2);
       });
       ctx.restore();
     }
-  }, [cellSize, currentCells, currentFloor, isMovingGroup, movingGroup]);
+
+  const activeFlashes = flashEffects.filter((effect) => effect.floorKey === floorIdentifier);
+    if (activeFlashes.length) {
+      const timeNow = typeof performance !== "undefined" ? performance.now() : Date.now();
+      activeFlashes.forEach((effect) => {
+        const elapsed = timeNow - effect.start;
+        if (elapsed > FLASH_TOTAL_DURATION) {
+          return;
+        }
+        const phase = Math.floor(elapsed / FLASH_INTERVAL);
+        if (phase % 2 !== 0) {
+          return;
+        }
+        const [x, y] = effect.cellKey.split(",").map(Number);
+        ctx.save();
+        ctx.strokeStyle = "#f87171";
+        ctx.lineWidth = 3;
+        ctx.shadowColor = "rgba(248,113,113,0.65)";
+        ctx.shadowBlur = 12;
+        ctx.strokeRect(x * cellSize + 1.5, y * cellSize + 1.5, cellSize - 3, cellSize - 3);
+        ctx.restore();
+      });
+    }
+  }, [cellSize, currentCells, currentFloor, flashEffects, flashTick, floorIdentifier, isMovingGroup, movingGroup]);
 
   const floorBounds = useCallback(
     (cells: FloorCell[]) => {
@@ -276,7 +354,7 @@ export default function Page() {
   );
 
   const getConnectedCells = useCallback(
-    (startX: number, startY: number, targetColor: string) => {
+    (startX: number, startY: number, targetAssetId: string) => {
       const visited = new Set<string>();
       const queue: FloorCell[] = [{ x: startX, y: startY }];
       const cluster: FloorCell[] = [];
@@ -287,7 +365,8 @@ export default function Page() {
         if (visited.has(key)) continue;
         visited.add(key);
 
-        if (currentCells.get(key) !== targetColor) continue;
+        const cellData = currentCells.get(key);
+        if (!cellData || cellData.assetId !== targetAssetId) continue;
         cluster.push(cell);
 
         const neighbors: FloorCell[] = [
@@ -322,14 +401,22 @@ export default function Page() {
       if (x < 0 || y < 0 || x >= currentFloor.x || y >= currentFloor.y) return;
 
       const key = `${x},${y}`;
-
       if (selectedTool === "erase") {
-        if (!currentCells.has(key)) return;
+        const existingCell = currentCells.get(key);
+        if (!existingCell) return;
+
+  const assetToRestore = assetRegistryRef.current.get(existingCell.assetId);
+  assetToRestore?.restore();
+
+        if (selectedAsset && assetToRestore && assetToRestore.id === selectedAsset.id) {
+          setAssetRemaining((prev) => Math.min(prev + 1, selectedAsset.quantity));
+        }
+
         setPaintedFloors((prev) => {
           const next = new Map(prev);
-          const floorMap = new Map(next.get(floorKey) ?? []);
+          const floorMap = new Map(next.get(floorIdentifier) ?? []);
           floorMap.delete(key);
-          next.set(floorKey, floorMap);
+          next.set(floorIdentifier, floorMap);
           return next;
         });
         return;
@@ -337,22 +424,29 @@ export default function Page() {
 
       if (selectedTool === "cut") {
         if (!selectedAsset || assetRemaining <= 0) return;
-        const existingColor = currentCells.get(key);
-        if (existingColor === selectedColor) return;
+        if (currentCells.has(key)) {
+          triggerCellFlash(floorIdentifier, key);
+          return;
+        }
 
-        selectedAsset.draw();
+  selectedAsset.draw();
         setAssetRemaining((prev) => Math.max(prev - 1, 0));
 
         setPaintedFloors((prev) => {
           const next = new Map(prev);
-          const floorMap = new Map(next.get(floorKey) ?? []);
-          floorMap.set(key, selectedColor);
-          next.set(floorKey, floorMap);
+          const floorMap = new Map(next.get(floorIdentifier) ?? []);
+          const cellValue: CellData = {
+            color: selectedColor,
+            assetId: selectedAsset.id,
+            assetType: selectedAsset.type,
+          };
+          floorMap.set(key, cellValue);
+          next.set(floorIdentifier, floorMap);
           return next;
         });
       }
     },
-    [assetRemaining, currentCells, currentFloor, floorKey, selectedAsset, selectedColor, selectedTool]
+    [assetRemaining, currentCells, currentFloor, floorIdentifier, selectedAsset, selectedColor, selectedTool, triggerCellFlash]
   );
 
   const startInteraction = useCallback(
@@ -363,11 +457,15 @@ export default function Page() {
 
       if (selectedTool === "move") {
         const key = `${x},${y}`;
-        const color = currentCells.get(key);
-        if (!color) return;
-        const cluster = getConnectedCells(x, y, color);
+        const cellData = currentCells.get(key);
+        if (!cellData) return;
+        const cluster = getConnectedCells(x, y, cellData.assetId);
         if (!cluster.length) return;
-        setMovingGroup({ cells: cluster, color, offset: { x: 0, y: 0 } });
+        const cellsWithValues = cluster.map((cell) => ({
+          ...cell,
+          value: currentCells.get(`${cell.x},${cell.y}`)!,
+        }));
+        setMovingGroup({ cells: cellsWithValues, offset: { x: 0, y: 0 } });
         setMoveAnchor({ x, y });
         setIsMovingGroup(true);
       } else {
@@ -397,11 +495,11 @@ export default function Page() {
 
   const finishInteraction = useCallback(() => {
     if (isMovingGroup && movingGroup) {
-      const { offset, cells, color } = movingGroup;
+      const { offset, cells } = movingGroup;
       if (offset.x !== 0 || offset.y !== 0) {
         setPaintedFloors((prev) => {
           const next = new Map(prev);
-          const floorMap = new Map(next.get(floorKey) ?? []);
+          const floorMap = new Map(next.get(floorIdentifier) ?? []);
 
           cells.forEach((cell) => {
             floorMap.delete(`${cell.x},${cell.y}`);
@@ -409,10 +507,10 @@ export default function Page() {
 
           cells.forEach((cell) => {
             const targetKey = `${cell.x + offset.x},${cell.y + offset.y}`;
-            floorMap.set(targetKey, color);
+            floorMap.set(targetKey, cell.value);
           });
 
-          next.set(floorKey, floorMap);
+          next.set(floorIdentifier, floorMap);
           return next;
         });
       }
@@ -421,7 +519,7 @@ export default function Page() {
     setMovingGroup(null);
     setIsMovingGroup(false);
     setIsPainting(false);
-  }, [floorKey, isMovingGroup, movingGroup]);
+  }, [floorIdentifier, isMovingGroup, movingGroup]);
 
   const handleMouseDown = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -470,7 +568,7 @@ export default function Page() {
 
   const handleSelectTool: ToolsProps["onSelectTool"] = useCallback((tool) => {
     setSelectedTool(tool.name);
-    setSelectedAsset(null);
+    setSelectedAssetId(null);
     setAssetRemaining(0);
     setIsPainting(false);
     setMovingGroup(null);
@@ -479,13 +577,30 @@ export default function Page() {
 
   const handleSelectAsset: ToolsProps["onSelectAsset"] = useCallback(
     (asset) => {
-      setSelectedAsset(asset);
+      setSelectedAssetId(asset.id);
       const nextColor = asset.color ?? moduleColorMap[asset.type] ?? DEFAULT_MODULE_COLOR;
       setSelectedColor(nextColor);
       setAssetRemaining(asset.remaining);
       setSelectedTool("cut");
     },
     [moduleColorMap]
+  );
+
+  const handleAssetsChange = useCallback(
+    (updatedAssets: SelectedAsset[]) => {
+      assetRegistryRef.current = new Map(updatedAssets.map((asset) => [asset.id, asset]));
+      setAssetRegistryVersion((prev) => prev + 1);
+      if (selectedAssetId) {
+        const current = assetRegistryRef.current.get(selectedAssetId);
+        if (current) {
+          setAssetRemaining(current.remaining);
+        } else {
+          setSelectedAssetId(null);
+          setAssetRemaining(0);
+        }
+      }
+    },
+    [selectedAssetId]
   );
 
   if (!currentFloor) {
@@ -512,7 +627,12 @@ export default function Page() {
             />
 
             <div className="sm:self-start">
-              <Tools assets={assets} onSelectTool={handleSelectTool} onSelectAsset={handleSelectAsset} />
+              <Tools
+                assets={assets}
+                onSelectTool={handleSelectTool}
+                onSelectAsset={handleSelectAsset}
+                onAssetsChange={handleAssetsChange}
+              />
             </div>
           </div>
 
@@ -524,6 +644,7 @@ export default function Page() {
               <canvas
                 ref={canvasRef}
                 className="h-auto w-full touch-none"
+                style={{ touchAction: "none" }}
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handlePointerUp}

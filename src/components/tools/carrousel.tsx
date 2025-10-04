@@ -46,6 +46,7 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: false, align: "start", dragFree: true });
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
+  const [completedAssets, setCompletedAssets] = useState<Set<string>>(new Set());
 
   const updateScrollState = useCallback(() => {
     if (!emblaApi) return;
@@ -63,6 +64,22 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
       emblaApi.off("reInit", updateScrollState);
     };
   }, [emblaApi, updateScrollState]);
+
+  // Track completed assets to prevent success animation from looping
+  useEffect(() => {
+    const newCompletedAssets = new Set<string>();
+    assets.forEach((asset) => {
+      const totalQuantity = asset.quantity ?? 0;
+      const remaining = Math.max(asset.remaining, 0);
+      const isComplete = totalQuantity > 0 && remaining === 0;
+      if (isComplete && !completedAssets.has(asset.id)) {
+        newCompletedAssets.add(asset.id);
+      }
+    });
+    if (newCompletedAssets.size > 0) {
+      setCompletedAssets(prev => new Set([...prev, ...newCompletedAssets]));
+    }
+  }, [assets, completedAssets]);
 
   const scrollPrev = useCallback(() => {
     if (!emblaApi) return;
@@ -84,11 +101,6 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
       const isComplete = totalQuantity > 0 && remaining === 0;
       const isDepleted = remaining <= 0;
       const disableButton = isDepleted;
-      const filledRatio = totalQuantity > 0 ? Math.min(Math.max((totalQuantity - remaining) / totalQuantity, 0), 1) : 0;
-      const waterStyle = {
-        height: `${filledRatio * 100}%`,
-        opacity: filledRatio > 0 ? 1 : 0.1,
-      };
       const color = asset.color ?? DEFAULT_COLOR;
       const animationSrc = asset.animationSrc ?? MODULE_LOTTIE_MAP[asset.type] ?? DEFAULT_MODULE_LOTTIE;
       const checkAnimationSrc = "/json_files/check_success.lottie";
@@ -125,10 +137,6 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
             {remaining}
           </span>
 
-          <div className={`module-water-overlay ${isComplete ? "opacity-85" : ""}`}>
-            <div className="module-water-fill" style={waterStyle} />
-          </div>
-
           <div className={`relative z-10 flex w-full flex-1 flex-col items-center justify-center gap-2 ${isComplete ? "opacity-80" : ""}`}>
             <div
               className={`flex h-14 w-14 items-center justify-center rounded-full transition ${
@@ -141,16 +149,16 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
                 <DotLottieReact
                   key={`check-${asset.id}`}
                   src={checkAnimationSrc}
-                  loop
-                  autoplay
+                  loop={false}
+                  autoplay={!completedAssets.has(asset.id)}
                   style={{ width: 50, height: 50 }}
                 />
               ) : (
                 <DotLottieReact
                   key={`${animationSrc}-${remaining}`}
                   src={animationSrc}
-                  loop
-                  autoplay
+                  loop={isActive}
+                  autoplay={isActive}
                   style={{ width: 50, height: 50 }}
                 />
               )}
@@ -172,7 +180,7 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
         </button>
       );
     },
-    [activeAssetId, onSelectAsset]
+    [activeAssetId, onSelectAsset, completedAssets]
   );
 
   return (

@@ -89,9 +89,10 @@ export type ToolsProps = {
   assets: Asset[];
   onSelectTool: (tool: ITool) => void;
   onSelectAsset: (asset: IAsset) => void;
+  onAssetsChange?: (assets: IAsset[]) => void;
 };
 
-export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, onSelectAsset }) => {
+export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, onSelectAsset, onAssetsChange }) => {
   const [drawed, setDrawed] = useState<Record<AssetType, number>[]>([]);
   const [activeTool, setActiveTool] = useState<ToolName | null>(null);
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
@@ -153,6 +154,20 @@ export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, on
         });
       };
 
+      const restore = () => {
+        setDrawed((prev) => {
+          const next = [...prev];
+          const current = { ...(next[index] ?? {}) } as Record<AssetType, number>;
+          const currentCount = current[asset.type] ?? 0;
+          if (currentCount <= 0) {
+            return prev;
+          }
+          current[asset.type] = currentCount - 1;
+          next[index] = current;
+          return next;
+        });
+      };
+
       return {
         id: `asset-${index}`,
         type: asset.type,
@@ -161,10 +176,15 @@ export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, on
         label,
         color,
         draw,
+        restore,
         animationSrc,
       } satisfies IAsset;
     });
   }, [incomingAssets, drawed]);
+
+  useEffect(() => {
+    onAssetsChange?.(assets);
+  }, [assets, onAssetsChange]);
 
   useEffect(() => {
     if (!activeAssetId) return;
