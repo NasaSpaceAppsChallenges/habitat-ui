@@ -9,7 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@leandrodasilva/welcome-page": "2.3.0",
+    "@leandrodasilva/welcome-page": "2.5.3",
     "@lit/react": "^1.0.8",
     "@lottiefiles/dotlottie-react": "^0.17.4",
     "embla-carousel": "^8.6.0",
