@@ -1,53 +1,85 @@
 import { atom } from "jotai";
 
-export type HabitatFloors = {
-  level: Number;
-  x_length: Number;
-  y_length: Number;
-}
-export type ModuleTypes =
-  | 'kitchen'
-  | 'living_room'
-  | 'bedroom'
-  | 'bathroom'
-  | 'laboratory'
-  | 'workshop'
-  | 'storage'
-  | 'communications'
-  | 'life_support'
-  | 'exercise'
-  | 'medical'
-  | 'common_area'
-  | String;
+import missionModel from "@/json-model.json";
 
-export type HabitatModules = {
-  uuid: String;
-  name: String;
-  reason: String;
+export type HabitatFloor = {
+  level: number;
+  x_length: number;
+  y_length: number;
+};
+
+export type ModuleTypes =
+  | "kitchen"
+  | "living_room"
+  | "bedroom"
+  | "bathroom"
+  | "laboratory"
+  | "workshop"
+  | "storage"
+  | "communications"
+  | "life_support"
+  | "exercise"
+  | "medical"
+  | "common_area"
+  | (string & {});
+
+export type ModuleRelationship = {
+  uuid: string;
   type: ModuleTypes;
-  relationship_with: {
-    type: ModuleTypes;
-    points: Number;
-    reason: String;
-  }
-}
+  reason: string;
+  points: number;
+};
+
+export type HabitatModule = {
+  uuid: string;
+  name: string;
+  description: string;
+  type: ModuleTypes;
+  numberOfBlocks: number;
+  goodWith: ModuleRelationship[];
+  badWith: ModuleRelationship[];
+};
 
 export type ModuleMissionMakerResponse = {
-  name: String;
-  description: String;
-  duration: String;
-  crewSize: Number;
-  habitat_floors: HabitatFloors[];
-  habitat_modules: HabitatModules[];
-}
+  name: string;
+  description: string;
+  duration: number;
+  crewSize: number;
+  habitat_floors: HabitatFloor[];
+  habitat_modules: HabitatModule[];
+};
 
-export const ModuleMakerConfigAtom = atom<ModuleMissionMakerResponse>(
-  {
-    name: '',
-    description: '',
-    duration: '',
-    crewSize: 0,
-    habitat_floors: [],
-    habitat_modules: []
-  }
-)
+const toRelationships = (
+  entries: Array<Record<string, unknown>> | undefined,
+  pointsKey: "positivePoints" | "negativePoints"
+): ModuleRelationship[] => {
+  return (entries ?? []).map((entry) => ({
+    uuid: String(entry.uuid ?? ""),
+    type: String(entry.type ?? "") as ModuleTypes,
+    reason: String(entry.reason ?? ""),
+    points: Number(entry[pointsKey] ?? 0),
+  }));
+};
+
+const defaultModuleMakerConfig: ModuleMissionMakerResponse = {
+  name: String(missionModel.missionName ?? ""),
+  description: String(missionModel.missionDescription ?? ""),
+  duration: 0,
+  crewSize: 0,
+  habitat_floors: (missionModel.habitat_floors ?? []).map((floor) => ({
+    level: Number(floor.level ?? 0),
+    x_length: Number(floor.x_length ?? 0),
+    y_length: Number(floor.y_length ?? 0),
+  })),
+  habitat_modules: (missionModel.modules ?? []).map((module) => ({
+    uuid: String(module.uuid ?? ""),
+    name: String(module.name ?? ""),
+    description: String(module.description ?? ""),
+    type: String(module.type ?? "") as ModuleTypes,
+    numberOfBlocks: Number(module.numberofBlocks ?? 0),
+    goodWith: toRelationships(module.goodWith as Array<Record<string, unknown>>, "positivePoints"),
+    badWith: toRelationships(module.badWith as Array<Record<string, unknown>>, "negativePoints"),
+  })),
+};
+
+export const moduleMakerConfigAtom = atom<ModuleMissionMakerResponse>(defaultModuleMakerConfig);
