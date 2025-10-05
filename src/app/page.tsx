@@ -24,9 +24,34 @@ const Widget = createComponent({
 
 export default function Home() {
 	const router = useRouter();
-	const handleSubmit = (e: Event) => {
+	const handleSubmit = async (e: Event) => {
 		console.log("form-submit event:", e);
-		router.push('/playground');
+		const fields = (e as CustomEvent).detail as {
+			missionName: 'moon' | 'mars';
+			playerName: string;
+			missionDescription: string;
+			astronautsQuantity: number;
+			missionTitle: string;
+		};
+		const resp = await fetch("https://nsa2025.linkai.me/api/mission/create", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				destination: fields.missionName,
+				architect_name: fields.playerName,
+				name: fields.missionTitle,
+				description: fields.missionDescription,
+				crew_size: fields.astronautsQuantity,
+			}),
+		})
+		if (resp.ok) {
+			const data = await resp.json();
+			console.log("Mission created:", data);
+			router.push(`/playground`);
+		}
+		// router.push('/playground');
 	}
   return (
 		<Widget
