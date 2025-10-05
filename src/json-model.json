@@ -11,11 +11,6 @@
             "level": 2,
             "x_length": 8,
             "y_length": 8
-        },
-        {
-            "level": 3,
-            "x_length": 6,
-            "y_length": 6
         }
     ],
     "modules": [

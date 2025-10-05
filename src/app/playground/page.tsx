@@ -2,10 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtom } from "jotai";
+import { useRouter } from "next/navigation";
 import FloorSelector, { type FloorSummary } from "@/components/FloorSelector";
+import PlayerScore from "@/components/PlayerScore";
 import { Tools } from "@/components/tools/index";
+import Launcher from "@/components/launcher";
 import NavBar from "@/components/NavBar";
-import { moduleMakerConfigAtom } from "@/app/jotai/moduleMakerConfigAtom";
+import {
+  moduleMakerConfigAtom,
+  userAtom,
+  type ModuleTypes as HabitatModuleType,
+  type MissionEventType,
+  type MissionEventCategory,
+  type RelationshipInsight,
+} from "@/app/jotai/moduleMakerConfigAtom";
+import { ModuleRelationships, ModuleTypes as RelationshipModuleTypes } from "@/utils/moduleRelationShip";
 import {
   DEFAULT_MODULE_LOTTIE,
   MODULE_LOTTIE_MAP,
@@ -14,6 +25,8 @@ import {
   MODULE_WALL_MAP,
   DEFAULT_MODULE_WALLS,
 } from "@/utils/moduleLottieMap";
+import { habitatPlanService } from "@/utils/calculateRelationShipScore";
+import { evaluatePlacementRules } from "@/utils/playgroundRules";
 import type {
   ToolsProps,
   SelectedAsset,
@@ -34,10 +47,23 @@ import {
   DESKTOP_RESERVED_VERTICAL,
 } from "@/utils/cellSizing";
 
+const RELATIONSHIP_MODULE_TYPES = new Set<string>(RelationshipModuleTypes.options as readonly string[]);
+
+const isRelationshipModuleType = (value: string): value is HabitatModuleType => RELATIONSHIP_MODULE_TYPES.has(value);
+
+const formatModuleLabel = (value: string) =>
+  value
+    .split(/[_\s]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
 
 
 export default function Page() {
+  const router = useRouter();
   const [config] = useAtom(moduleMakerConfigAtom);
+  const [, setUser] = useAtom(userAtom);
   const { habitat_floors: rawFloors, habitat_modules: rawModules } = config;
   const floors = useMemo(
     () =>
@@ -56,6 +82,9 @@ export default function Page() {
         map[module.type] = MODULE_COLOR_PALETTE[index % MODULE_COLOR_PALETTE.length];
       }
     });
+    if (!map.corridor) {
+      map.corridor = "#94a3b8";
+    }
     return map;
   }, [rawModules]);
   const [selectedFloorIndex, setSelectedFloorIndex] = useState(0);
@@ -76,6 +105,13 @@ export default function Page() {
   const [flashTick, setFlashTick] = useState(0);
   const textureCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const [textureVersion, setTextureVersion] = useState(0);
+  const launchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const postLaunchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const maxDistanceRef = useRef<number | null>(null);
+  const relationshipIssuesRef = useRef<Set<string>>(new Set());
+  const [launchState, setLaunchState] = useState<{ active: boolean; loading: boolean; success: boolean }>(
+    () => ({ active: false, loading: false, success: false })
+  );
 
   const selectedAsset = useMemo(() => {
     if (!selectedAssetId) return null;
@@ -120,8 +156,10 @@ export default function Page() {
       if (!textures.length) {
         return { textureUrl: DEFAULT_MODULE_TEXTURES[0], textureIndex: 0 };
       }
-      const totalCapacity = Math.max(asset.quantity, textures.length);
-      const normalized = Math.max(0, Math.min(1, (newPlacedCount - 1) / totalCapacity));
+      const capacity = Number.isFinite(asset.quantity)
+        ? Math.max(asset.quantity, textures.length)
+        : Math.max(textures.length, 1);
+      const normalized = Math.max(0, Math.min(1, (newPlacedCount - 1) / capacity));
       const variantIndex = Math.min(textures.length - 1, Math.floor(normalized * textures.length));
       return { textureUrl: textures[variantIndex], textureIndex: variantIndex };
     },
@@ -133,6 +171,155 @@ export default function Page() {
       MODULE_WALL_MAP[assetType as keyof typeof MODULE_WALL_MAP] ?? DEFAULT_MODULE_WALLS,
     []
   );
+
+  const createEventId = useCallback(
+    () =>
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    []
+  );
+
+  const logMissionEvent = useCallback(
+    (
+      message: string,
+      delta: number,
+      type: MissionEventType = "info",
+      category: MissionEventCategory = "general"
+    ) => {
+      const id = createEventId();
+      const timestamp = Date.now();
+
+      setUser((prev) => {
+        const entry = { id, description: message, delta, timestamp, type, category };
+        const missionHistory = [entry, ...prev.missionHistory].slice(0, 20);
+        return {
+          ...prev,
+          missionHistory,
+        };
+      });
+    },
+    [createEventId, setUser]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const buildRequestFloors = () => {
+      return floors.map((floor, index) => {
+        const width = Math.max(0, floor.x);
+        const height = Math.max(0, floor.y);
+        const matrix: Array<Array<{ type: HabitatModuleType } | null>> = Array.from({ length: width }, () =>
+          Array.from({ length: height }, () => null)
+        );
+
+        const floorKey = (floor.level ?? index) as FloorIdentifier;
+        const floorCells = paintedFloors.get(floorKey);
+
+        floorCells?.forEach((cellData, key) => {
+          const [cellX, cellY] = key.split(",").map(Number);
+          if (!Number.isFinite(cellX) || !Number.isFinite(cellY)) return;
+          if (!matrix[cellX] || cellY >= matrix[cellX].length) return;
+
+          const assetType = cellData.assetType;
+          if (typeof assetType !== "string") return;
+          if (!isRelationshipModuleType(assetType)) return;
+
+          matrix[cellX][cellY] = { type: assetType };
+        });
+
+        return { matrix };
+      });
+    };
+
+    const hasModulesPlaced = (requestFloors: ReturnType<typeof buildRequestFloors>) =>
+      requestFloors.some((floor) => floor.matrix.some((column) => column.some((cell) => cell !== null)));
+
+    const evaluateRelationships = async () => {
+      if (!floors.length) {
+        relationshipIssuesRef.current = new Set();
+        setUser((prev) => ({
+          ...prev,
+          score: 0,
+          relationshipSummary: { negative: [], positive: [] },
+        }));
+        return;
+      }
+
+      const requestFloors = buildRequestFloors();
+
+      if (!hasModulesPlaced(requestFloors)) {
+        relationshipIssuesRef.current = new Set();
+        setUser((prev) => ({
+          ...prev,
+          score: 0,
+          relationshipSummary: { negative: [], positive: [] },
+        }));
+        return;
+      }
+
+      try {
+        const result = await habitatPlanService.evaluateHabitatPlan({ floors: requestFloors });
+        if (cancelled) return;
+
+        const negativeFactors = result.worse_points.filter((factor) => factor.points < 0);
+        const nextIssues = new Set<string>();
+
+        negativeFactors.forEach((factor) => {
+          const key = `${factor.module_type}->${factor.with_module_type}`;
+          nextIssues.add(key);
+
+          if (relationshipIssuesRef.current.has(key)) return;
+
+          const relation = ModuleRelationships.find(
+            (item) => item.type === factor.module_type && item.with === factor.with_module_type
+          );
+
+          const message = relation?.brief_reason ??
+            `Conflito entre ${formatModuleLabel(factor.module_type)} e ${formatModuleLabel(factor.with_module_type)}.`;
+
+          logMissionEvent(message, factor.points, "error", "module_relationship");
+        });
+
+        const mappedNegative: RelationshipInsight[] = negativeFactors.map((factor) => ({
+          moduleType: factor.module_type,
+          withModuleType: factor.with_module_type,
+          points: factor.points,
+          reason: factor.reason,
+        }));
+
+        const mappedPositive: RelationshipInsight[] = result.improvements_points
+          .filter((factor) => factor.points > 0)
+          .map((factor) => ({
+            moduleType: factor.module_type,
+            withModuleType: factor.with_module_type,
+            points: factor.points,
+            reason: factor.reason,
+          }));
+
+        setUser((prev) => ({
+          ...prev,
+          score: result.score,
+          relationshipSummary: {
+            negative: mappedNegative,
+            positive: mappedPositive,
+          },
+        }));
+
+        relationshipIssuesRef.current = nextIssues;
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to evaluate module relationships", error);
+        }
+      }
+    };
+
+    evaluateRelationships();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [floors, logMissionEvent, paintedFloors, setUser]);
 
   useEffect(() => {
     if (!flashEffects.length) return;
@@ -179,6 +366,17 @@ export default function Page() {
     setMovingGroup(null);
   }, [selectedFloorIndex]);
 
+  useEffect(() => {
+    return () => {
+      if (launchTimerRef.current) {
+        clearTimeout(launchTimerRef.current);
+      }
+      if (postLaunchTimerRef.current) {
+        clearTimeout(postLaunchTimerRef.current);
+      }
+    };
+  }, []);
+
   const currentCells = useMemo(() => paintedFloors.get(floorIdentifier) ?? new Map<string, CellData>(), [paintedFloors, floorIdentifier]);
 
   const floorsWithUsage = useMemo<FloorSummary[]>(
@@ -198,19 +396,28 @@ export default function Page() {
     [floors, paintedFloors]
   );
 
-  const assets = useMemo<ToolsProps["assets"]>(
-    () =>
-      (rawModules ?? [])
-        .map((module) => ({
-          type: module.type,
-          quantity: module.numberOfBlocks ?? 0,
-          label: module.name ?? module.type,
-          color: moduleColorMap[module.type] ?? DEFAULT_MODULE_COLOR,
-          animationSrc: MODULE_LOTTIE_MAP[module.type] ?? DEFAULT_MODULE_LOTTIE,
-        }))
-        .filter((asset) => asset.quantity > 0),
-    [rawModules, moduleColorMap]
-  );
+  const assets = useMemo<ToolsProps["assets"]>(() => {
+    const moduleAssets = (rawModules ?? [])
+      .map((module) => ({
+        type: module.type,
+        quantity: module.numberOfBlocks ?? 0,
+        label: module.name ?? module.type,
+        color: moduleColorMap[module.type] ?? DEFAULT_MODULE_COLOR,
+        animationSrc: MODULE_LOTTIE_MAP[module.type] ?? DEFAULT_MODULE_LOTTIE,
+      }))
+      .filter((asset) => asset.quantity > 0);
+
+    const corridorAsset = {
+      type: "corridor" as const,
+      quantity: Number.POSITIVE_INFINITY,
+      label: "Corredor",
+      color: moduleColorMap.corridor ?? "#94a3b8",
+      animationSrc: MODULE_LOTTIE_MAP.corridor ?? DEFAULT_MODULE_LOTTIE,
+      unlimited: true,
+    } satisfies ToolsProps["assets"][number];
+
+    return [...moduleAssets, corridorAsset];
+  }, [moduleColorMap, rawModules]);
 
   const defaultModuleColor = useMemo(() => {
     if (!rawModules?.length) return DEFAULT_MODULE_COLOR;
@@ -324,6 +531,36 @@ export default function Page() {
       drawTexture(cell.textureUrl, x, y, cell.color);
     });
 
+    if (selectedFloorIndex > 0 && currentFloor) {
+      const supportingFloor = floors[selectedFloorIndex - 1];
+      const supportingKey = (supportingFloor?.level ?? selectedFloorIndex - 1) as FloorIdentifier;
+      const supportingCells = paintedFloors.get(supportingKey);
+
+      for (let y = 0; y < currentFloor.y; y++) {
+        for (let x = 0; x < currentFloor.x; x++) {
+          const cellKey = `${x},${y}`;
+          const isOccupied = currentCells.has(cellKey);
+          const hasSupport = supportingCells?.has(cellKey) ?? false;
+          if (!isOccupied && !hasSupport) {
+            const destX = x * cellSize;
+            const destY = y * cellSize;
+            ctx.save();
+            ctx.fillStyle = "rgba(15,23,42,0.55)";
+            ctx.fillRect(destX, destY, cellSize, cellSize);
+            ctx.strokeStyle = "rgba(148,163,184,0.32)";
+            ctx.lineWidth = Math.max(1, cellSize * 0.065);
+            ctx.beginPath();
+            ctx.moveTo(destX + cellSize * 0.2, destY + cellSize * 0.2);
+            ctx.lineTo(destX + cellSize * 0.8, destY + cellSize * 0.8);
+            ctx.moveTo(destX + cellSize * 0.8, destY + cellSize * 0.2);
+            ctx.lineTo(destX + cellSize * 0.2, destY + cellSize * 0.8);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+      }
+    }
+
     if (movingGroup && isMovingGroup) {
       movingGroup.cells.forEach((cell) => {
         const drawX = cell.x + movingGroup.offset.x;
@@ -410,6 +647,9 @@ export default function Page() {
     isMovingGroup,
     movingGroup,
     resolveWallTextures,
+    floors,
+    paintedFloors,
+    selectedFloorIndex,
     textureVersion,
   ]);
 
@@ -530,16 +770,33 @@ export default function Page() {
       }
 
       if (selectedTool === "cut") {
-        if (!selectedAsset || assetRemaining <= 0) return;
-        const occupiedCell = currentCells.get(key);
-        if (occupiedCell) {
-          if (occupiedCell.assetId !== selectedAsset.id) {
+        const validation = evaluatePlacementRules({
+          key,
+          selectedAsset,
+          assetRemaining,
+          currentCells,
+          selectedFloorIndex,
+          floors,
+          paintedFloors,
+        });
+
+        if (!validation.allowed) {
+          const { violation } = validation;
+          if (violation.shouldFlash) {
             triggerCellFlash(floorIdentifier, key);
           }
+          logMissionEvent(violation.message, 0, violation.type);
           return;
         }
 
-        const placedBefore = selectedAsset.quantity - selectedAsset.remaining;
+        if (!selectedAsset) {
+          return;
+        }
+
+        const placedBefore =
+          Number.isFinite(selectedAsset.quantity) && Number.isFinite(selectedAsset.remaining)
+            ? selectedAsset.quantity - selectedAsset.remaining
+            : 0;
         const { textureUrl, textureIndex } = resolveTextureForPlacement(selectedAsset, placedBefore + 1);
 
         selectedAsset.draw();
@@ -559,6 +816,23 @@ export default function Page() {
           next.set(floorIdentifier, floorMap);
           return next;
         });
+
+        const floorLabel = currentFloor?.level ?? selectedFloorIndex + 1;
+        const coords = `(${x + 1}, ${y + 1})`;
+        const moduleLabel = selectedAsset.label ?? selectedAsset.type;
+  logMissionEvent(`Módulo ${moduleLabel} posicionado em ${coords} no piso ${floorLabel}.`, 0, "success");
+
+        const baseFloor = floors[0];
+        if (baseFloor) {
+          void habitatPlanService
+            .calculateMaxDistance(floors.length, baseFloor.x, baseFloor.y)
+            .then((distance) => {
+              maxDistanceRef.current = distance;
+            })
+            .catch((error) => {
+              console.error("Failed to calculate max distance", error);
+            });
+        }
       }
     },
     [
@@ -566,11 +840,15 @@ export default function Page() {
       currentCells,
       currentFloor,
       floorIdentifier,
+      floors,
+      paintedFloors,
       resolveTextureForPlacement,
       selectedAsset,
       selectedColor,
+      selectedFloorIndex,
       selectedTool,
       triggerCellFlash,
+      logMissionEvent,
     ]
   );
 
@@ -667,7 +945,6 @@ export default function Page() {
     (event: React.TouchEvent<HTMLCanvasElement>) => {
       const touch = event.touches[0];
       if (!touch) return;
-      event.preventDefault();
       startInteraction(touch.clientX, touch.clientY);
     },
     [startInteraction]
@@ -677,19 +954,14 @@ export default function Page() {
     (event: React.TouchEvent<HTMLCanvasElement>) => {
       const touch = event.touches[0];
       if (!touch) return;
-      event.preventDefault();
       moveInteraction(touch.clientX, touch.clientY);
     },
     [moveInteraction]
   );
 
-  const handlePointerUp = useCallback(
-    (event: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-      event.preventDefault();
-      finishInteraction();
-    },
-    [finishInteraction]
-  );
+  const handlePointerUp = useCallback(() => {
+    finishInteraction();
+  }, [finishInteraction]);
 
   const handleSelectTool: ToolsProps["onSelectTool"] = useCallback((tool) => {
     setSelectedTool(tool.name);
@@ -710,6 +982,25 @@ export default function Page() {
     },
     [moduleColorMap]
   );
+
+  const handleLaunch = useCallback(() => {
+    if (launchTimerRef.current) {
+      clearTimeout(launchTimerRef.current);
+    }
+    if (postLaunchTimerRef.current) {
+      clearTimeout(postLaunchTimerRef.current);
+      postLaunchTimerRef.current = null;
+    }
+    setLaunchState({ active: true, loading: true, success: false });
+    launchTimerRef.current = setTimeout(() => {
+      const didSucceed = Math.random() >= 0.5;
+      setLaunchState({ active: true, loading: false, success: didSucceed });
+      launchTimerRef.current = null;
+      postLaunchTimerRef.current = setTimeout(() => {
+        router.push("/relatorios");
+      }, 2000);
+    }, 3000);
+  }, [router]);
 
   const handleAssetsChange = useCallback(
     (updatedAssets: SelectedAsset[]) => {
@@ -744,44 +1035,59 @@ export default function Page() {
       <NavBar />
       <div className="min-h-[100dvh] overflow-hidden bg-slate-950 pb-6 pt-14 text-cyan-100 md:pt-22">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 sm:px-6">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between">
-            <FloorSelector
-              floors={floorsWithUsage}
-              selectedFloorIndex={selectedFloorIndex}
-              onSelectFloor={setSelectedFloorIndex}
-            />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-3">
+              <PlayerScore />
+              <FloorSelector
+                floors={floorsWithUsage}
+                selectedFloorIndex={selectedFloorIndex}
+                onSelectFloor={setSelectedFloorIndex}
+              />
+            </div>
+          </div>
 
-            <div className="sm:self-start">
+          <div className="mx-auto flex w-full max-w-5xl flex-row items-start overflow-x-auto">
+            <div className="flex-1 min-w-0 pr-3">
+              <div className="relative w-full rounded-3xl border border-cyan-500/20 bg-slate-900/70 px-2 pb-4 pt-2 shadow-xl">
+                <div
+                  className="mx-auto w-full max-w-[90vw] overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-950/80"
+                  style={{ maxWidth: boardPixelWidth || undefined, maxHeight: boardPixelHeight || undefined }}
+                >
+                  <canvas
+                    ref={canvasRef}
+                    className="h-auto w-full touch-none"
+                    style={{ touchAction: "none" }}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handlePointerUp}
+                    onMouseLeave={() => {
+                      if (isPainting || isMovingGroup) finishInteraction();
+                    }}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handlePointerUp}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-shrink-0 lg:sticky lg:top-28">
               <Tools
                 assets={assets}
                 onSelectTool={handleSelectTool}
                 onSelectAsset={handleSelectAsset}
                 onAssetsChange={handleAssetsChange}
+                onLaunch={handleLaunch}
+                launching={launchState.active}
               />
             </div>
           </div>
 
-          <div className="relative mx-auto w-full max-w-5xl rounded-3xl border border-cyan-500/20 bg-slate-900/70 px-2 pb-4 pt-2 shadow-xl">
-            <div
-              className="mx-auto w-full max-w-[90vw] overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-950/80"
-              style={{ maxWidth: boardPixelWidth || undefined, maxHeight: boardPixelHeight || undefined }}
-            >
-              <canvas
-                ref={canvasRef}
-                className="h-auto w-full touch-none"
-                style={{ touchAction: "none" }}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handlePointerUp}
-                onMouseLeave={() => {
-                  if (isPainting || isMovingGroup) finishInteraction();
-                }}
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handlePointerUp}
-              />
+          {launchState.active && (
+            <div className="mx-auto w-full max-w-5xl">
+              <Launcher loading={launchState.loading} success={launchState.success} />
             </div>
-          </div>
+          )}
         </div>
       </div>
     </>

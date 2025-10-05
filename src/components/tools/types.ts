@@ -1,6 +1,6 @@
 import type { FC } from "react";
 
-import type { ModuleTypes } from "@/app/jotai/moduleMakerConfigAtom";
+import type { ModuleAssetType } from "@/utils/moduleLottieMap";
 
 export const toolNames = ["erase", "move"] as const;
 
@@ -10,7 +10,7 @@ export interface ITool {
   name: ToolName;
 }
 
-export type AssetType = ModuleTypes;
+export type AssetType = ModuleAssetType;
 
 export interface Asset {
   type: AssetType;
@@ -18,6 +18,7 @@ export interface Asset {
   label?: string;
   color?: string;
   animationSrc?: string;
+  unlimited?: boolean;
 }
 
 export interface IAsset {
@@ -30,6 +31,7 @@ export interface IAsset {
   animationSrc?: string;
   draw: () => void;
   restore: () => void;
+  unlimited?: boolean;
 }
 
 export type IconComponent = FC<{ className?: string }>;

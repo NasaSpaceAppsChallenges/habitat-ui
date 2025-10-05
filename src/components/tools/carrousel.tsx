@@ -39,14 +39,26 @@ export type ToolsCarrouselProps = {
   assets: IAsset[];
   activeAssetId: string | null;
   onSelectAsset: (asset: IAsset) => void;
+  onLaunch?: () => void;
+  launching?: boolean;
 };
 
-export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId, onSelectAsset }) => {
+export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId, onSelectAsset, onLaunch, launching }) => {
   const slides = useMemo(() => assets ?? [], [assets]);
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: false, align: "start", dragFree: true });
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
   const [completedAssets, setCompletedAssets] = useState<Set<string>>(new Set());
+  const [failedAnimations, setFailedAnimations] = useState<Record<string, boolean>>({});
+  const allPlaced = useMemo(
+    () => slides.length > 0 && slides.every((asset) => asset.unlimited || asset.remaining === 0),
+    [slides]
+  );
+
+  const markAnimationFailed = useCallback((src: string) => {
+    if (!src) return;
+    setFailedAnimations((prev) => (prev[src] ? prev : { ...prev, [src]: true }));
+  }, []);
 
   const updateScrollState = useCallback(() => {
     if (!emblaApi) return;
@@ -65,7 +77,6 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
     };
   }, [emblaApi, updateScrollState]);
 
-  // Track completed assets to prevent success animation from looping
   useEffect(() => {
     const newCompletedAssets = new Set<string>();
     assets.forEach((asset) => {
@@ -96,14 +107,17 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
       const isActive = activeAssetId === asset.id;
       const label = asset.label || createDisplayLabel(asset.type);
       const truncatedLabel = truncateLabel(label);
-      const remaining = Math.max(asset.remaining, 0);
-      const totalQuantity = asset.quantity ?? 0;
-      const isComplete = totalQuantity > 0 && remaining === 0;
-      const isDepleted = remaining <= 0;
-      const disableButton = isDepleted;
+  const totalQuantity = asset.quantity ?? 0;
+  const isUnlimited = Boolean(asset.unlimited) || !Number.isFinite(totalQuantity);
+  const remaining = isUnlimited ? Number.POSITIVE_INFINITY : Math.max(asset.remaining, 0);
+  const remainingLabel = isUnlimited ? "∞" : remaining;
+  const isComplete = !isUnlimited && totalQuantity > 0 && remaining === 0;
+  const isDepleted = !isUnlimited && remaining <= 0;
+  const disableButton = isDepleted;
       const color = asset.color ?? DEFAULT_COLOR;
       const animationSrc = asset.animationSrc ?? MODULE_LOTTIE_MAP[asset.type] ?? DEFAULT_MODULE_LOTTIE;
       const checkAnimationSrc = "/json_files/check_success.lottie";
+      const shouldShowAnimation = !!animationSrc && !failedAnimations[animationSrc];
 
       const buttonStateClass = disableButton
         ? isComplete
@@ -119,6 +133,15 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
         ? `0 0 0 1px ${color}`
         : undefined;
 
+      const renderFallbackBadge = (text: string) => (
+        <div
+          className="flex h-12 w-12 items-center justify-center rounded-full border border-cyan-300/30 bg-slate-900/70 text-xs font-semibold text-cyan-200"
+          aria-hidden="true"
+        >
+          {text.slice(0, 2).toUpperCase() || "--"}
+        </div>
+      );
+
       return (
         <button
           type="button"
@@ -126,15 +149,15 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
           className={`relative flex w-24 h-26 shrink-0 flex-col items-center justify-center rounded-2xl border px-4 py-4 text-center transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${buttonStateClass}`}
           style={{ boxShadow: highlightShadow }}
           onClick={() => !disableButton && onSelectAsset(asset)}
-          title={`${label} (${remaining})`}
-          aria-label={`${label} (${remaining})`}
+          title={`${label} (${remainingLabel})`}
+          aria-label={`${label} (${remainingLabel})`}
         >
           <span
             className={`absolute -top-1.5 -right-1.5 z-20 flex h-5 min-w-[1.35rem] items-center justify-center rounded-full bg-slate-900/95 px-1 text-[0.55rem] font-semibold text-cyan-100 shadow transition ${
               disableButton && !isComplete ? "opacity-40" : ""
             }`}
           >
-            {remaining}
+            {remainingLabel}
           </span>
 
           <div className={`relative z-10 flex w-full flex-1 flex-col items-center justify-center gap-2 ${isComplete ? "opacity-80" : ""}`}>
@@ -146,21 +169,29 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
               }`}
             >
               {isComplete ? (
+                failedAnimations[checkAnimationSrc]
+                  ? renderFallbackBadge("OK")
+                  : (
+                    <DotLottieReact
+                      key={`check-${asset.id}`}
+                      src={checkAnimationSrc}
+                      loop={false}
+                      autoplay={!completedAssets.has(asset.id)}
+                      style={{ width: 50, height: 50 }}
+                      onError={() => markAnimationFailed(checkAnimationSrc)}
+                    />
+                  )
+              ) : shouldShowAnimation ? (
                 <DotLottieReact
-                  key={`check-${asset.id}`}
-                  src={checkAnimationSrc}
-                  loop={false}
-                  autoplay={!completedAssets.has(asset.id)}
-                  style={{ width: 50, height: 50 }}
-                />
-              ) : (
-                <DotLottieReact
-                  key={`${animationSrc}-${remaining}`}
+                  key={animationSrc}
                   src={animationSrc}
                   loop={isActive}
                   autoplay={isActive}
                   style={{ width: 50, height: 50 }}
+                  onError={() => markAnimationFailed(animationSrc)}
                 />
+              ) : (
+                renderFallbackBadge(truncatedLabel)
               )}
             </div>
             <span
@@ -180,54 +211,69 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
         </button>
       );
     },
-    [activeAssetId, onSelectAsset, completedAssets]
+    [activeAssetId, completedAssets, failedAnimations, markAnimationFailed, onSelectAsset]
   );
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-2 pb-3 sm:px-4 sm:pb-4">
+    <div
+      className={`fixed inset-x-0 bottom-0 z-40 flex justify-center px-2 pb-3 sm:px-4 sm:pb-4 ${
+        allPlaced ? "pointer-events-auto" : "pointer-events-none"
+      }`}
+    >
       <div className="pointer-events-auto w-full max-w-6xl">
         <div className="relative overflow-hidden rounded-3xl shadow-lg backdrop-blur">
-          {slides.length ? (
-            <>
-              <div className="absolute inset-y-0 left-2 z-10 hidden items-center sm:flex">
-                <button
-                  type="button"
-                  onClick={scrollPrev}
-                  disabled={!canScrollPrev}
-                  className={`flex h-9 w-9 items-center justify-center rounded-full border border-cyan-500/30 bg-slate-950/80 text-cyan-100 shadow transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${
-                    canScrollPrev ? "hover:border-cyan-300 hover:text-cyan-50" : "opacity-40"
-                  }`}
-                >
-                  <ArrowIcon direction="left" className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="absolute inset-y-0 right-2 z-10 hidden items-center sm:flex">
-                <button
-                  type="button"
-                  onClick={scrollNext}
-                  disabled={!canScrollNext}
-                  className={`flex h-9 w-9 items-center justify-center rounded-full border border-cyan-500/30 bg-slate-950/80 text-cyan-100 shadow transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${
-                    canScrollNext ? "hover:border-cyan-300 hover:text-cyan-50" : "opacity-40"
-                  }`}
-                >
-                  <ArrowIcon direction="right" className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="px-4 py-4">
-                <div className="overflow-hidden" ref={emblaRef}>
-                  <div className="flex w-full gap-3">
-                    {slides.map((asset) => (
-                      <div key={asset.id} className="flex-[0_0_auto]">
-                        {renderAssetButton(asset)}
-                      </div>
-                    ))}
+          <div
+            className={`transition-all duration-300 ease-out ${
+              allPlaced ? "max-h-0 opacity-0 translate-y-6 pointer-events-none" : "max-h-[320px] opacity-100"
+            }`}
+          >
+            {slides.length ? (
+              <>
+                <div className="absolute inset-y-0 left-2 z-10 hidden items-center sm:flex">
+                  <button
+                    type="button"
+                    onClick={scrollPrev}
+                    disabled={!canScrollPrev}
+                    className={`flex h-9 w-9 items-center justify-center rounded-full border border-cyan-500/30 bg-slate-950/80 text-cyan-100 shadow transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${
+                      canScrollPrev ? "hover:border-cyan-300 hover:text-cyan-50" : "opacity-40"
+                    }`}
+                  >
+                    <ArrowIcon direction="left" className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="absolute inset-y-0 right-2 z-10 hidden items-center sm:flex">
+                  <button
+                    type="button"
+                    onClick={scrollNext}
+                    disabled={!canScrollNext}
+                    className={`flex h-9 w-9 items-center justify-center rounded-full border border-cyan-500/30 bg-slate-950/80 text-cyan-100 shadow transition focus:outline-none focus:ring-2 focus:ring-cyan-300 ${
+                      canScrollNext ? "hover:border-cyan-300 hover:text-cyan-50" : "opacity-40"
+                    }`}
+                  >
+                    <ArrowIcon direction="right" className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="px-4 py-4">
+                  <div className="overflow-hidden" ref={emblaRef}>
+                    <div className="flex w-full gap-3">
+                      {slides.map((asset) => (
+                        <div key={asset.id} className="flex-[0_0_auto]">
+                          {renderAssetButton(asset)}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
+              </>
+            ) : (
+              <div className="flex h-16 w-full items-center justify-center text-xs text-cyan-300/80 sm:text-sm">
+                Nenhum módulo disponível
               </div>
-            </>
-          ) : (
-            <div className="flex h-16 w-full items-center justify-center text-xs text-cyan-300/80 sm:text-sm">
-              Nenhum módulo disponível
+            )}
+          </div>
+          {allPlaced && (
+            <div className="flex flex-col items-center gap-3 px-6 py-6">
+              <LaunchButton onLaunch={onLaunch} disabled={Boolean(launching)} launching={Boolean(launching)} />
             </div>
           )}
         </div>
@@ -235,3 +281,49 @@ export const ToolsCarrousel: FC<ToolsCarrouselProps> = ({ assets, activeAssetId,
     </div>
   );
 };
+
+const LaunchButton: FC<{ onLaunch?: () => void; disabled?: boolean; launching?: boolean }> = ({ onLaunch, disabled, launching }) => (
+  <button
+    type="button"
+    disabled={disabled}
+    onClick={() => !disabled && onLaunch?.()}
+    className={`group inline-flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold uppercase tracking-widest transition focus:outline-none focus:ring-2 focus:ring-emerald-200 ${
+      disabled
+        ? "cursor-not-allowed border-emerald-500/30 bg-emerald-500/10 text-emerald-200/60"
+        : "border-emerald-300/70 bg-emerald-500/15 text-emerald-100 hover:border-emerald-200 hover:bg-emerald-400/20"
+    }`}
+  >
+    <span
+      className={`relative flex h-7 w-7 items-center justify-center rounded-full text-emerald-200 shadow-inner shadow-emerald-500/30 transition ${
+        disabled ? "bg-emerald-500/10" : "bg-emerald-500/20 group-hover:bg-emerald-400/25"
+      }`}
+    >
+      {launching ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <RocketIcon className="h-4 w-4" />}
+    </span>
+    {launching ? "Lançando..." : "Zarpar"}
+  </button>
+);
+
+const RocketIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.7}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 12l4.5-4.5a7 7 0 019.9 9.9L14 21l-2.5-2.5" />
+    <path d="M9 6l3 3" />
+    <path d="M5 12l-1 5 5-1" />
+    <path d="M15 9l3 3" />
+  </svg>
+);
+
+const SpinnerIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4a8 8 0 108 8" />
+  </svg>
+);

@@ -1,6 +1,5 @@
-import { atom } from "jotai";
-
 import missionModel from "../../json-model.json" assert { type: "json" };
+import { atom } from "jotai";
 
 export type HabitatFloor = {
   level: number;
@@ -45,6 +44,38 @@ export type ModuleMissionMakerResponse = {
   habitat_modules: HabitatModule[];
 };
 
+export type MissionEventType = "success" | "error" | "warning" | "info";
+
+export type MissionEventCategory = "general" | "module_relationship";
+
+export type MissionHistoryEntry = {
+  id: string;
+  description: string;
+  delta: number;
+  timestamp: number;
+  type: MissionEventType;
+  category: MissionEventCategory;
+};
+
+export type RelationshipInsight = {
+  moduleType: ModuleTypes;
+  withModuleType: ModuleTypes;
+  points: number;
+  reason: string;
+};
+
+export type RelationshipSummary = {
+  negative: RelationshipInsight[];
+  positive: RelationshipInsight[];
+};
+
+export type UserState = {
+  name: string;
+  score: number;
+  missionHistory: MissionHistoryEntry[];
+  relationshipSummary: RelationshipSummary;
+};
+
 const toRelationships = (
   entries: Array<Record<string, unknown>> | undefined,
   pointsKey: "positivePoints" | "negativePoints"
@@ -79,3 +110,13 @@ const defaultModuleMakerConfig: ModuleMissionMakerResponse = {
 };
 
 export const moduleMakerConfigAtom = atom<ModuleMissionMakerResponse>(defaultModuleMakerConfig);
+
+export const userAtom = atom<UserState>({
+  name: "Comandante",
+  score: 0,
+  missionHistory: [],
+  relationshipSummary: {
+    negative: [],
+    positive: [],
+  },
+});
