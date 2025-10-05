@@ -27,7 +27,7 @@ const Widget = createComponent({
 
 export default function Home() {
 	const router = useRouter();
-	const [_, setConfig] = useAtom(moduleMakerConfigAtom);
+	const [, setConfig] = useAtom(moduleMakerConfigAtom);
 	const handleSubmit = async (e: Event) => {
 		console.log("form-submit event:", e);
 		const fields = (e as CustomEvent).detail as {

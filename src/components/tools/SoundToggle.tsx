@@ -109,10 +109,6 @@ export function SoundToggle() {
           </svg>
         )}
       </button>
-
-      <p className="text-center text-xs uppercase tracking-[0.32em] text-cyan-100/80">
-        {isMusicPlaying ? "Música ON" : "Música OFF"}
-      </p>
     </div>
   );
 }

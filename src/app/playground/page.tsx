@@ -1,26 +1,19 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAtom, useSetAtom } from "jotai";
-import { useRouter } from "next/navigation";
+import { useAtom } from "jotai";
 import FloorSelector, { type FloorSummary } from "@/components/FloorSelector";
 import PlayerScore from "@/components/PlayerScore";
 import { Tools } from "@/components/tools/index";
-import Launcher from "@/components/launcher";
-import {
-  formatModuleLabel,
-  makeReportFileName,
-  normalizeImages,
-} from "./functions/helpers";
+import Launcher, { LaunchController } from "@/components/launcher";
+import { formatModuleLabel } from "./functions/helpers";
 import {
   moduleMakerConfigAtom,
   userAtom,
-  missionReportAtom,
   type ModuleTypes as HabitatModuleType,
   type MissionEventType,
   type MissionEventCategory,
   type RelationshipInsight,
 } from "@/app/jotai/moduleMakerConfigAtom";
-import { playerLanunchStatusAtom, type PlayerLaunchStatus } from "@/app/jotai/playerlaunchStatusAtom";
 import { ModuleRelationships } from "@/utils/moduleRelationShip";
 import {
   DEFAULT_MODULE_LOTTIE,
@@ -44,7 +37,7 @@ import type {
   FloorIdentifier,
   FlashEffect,
 } from "@/types/playground";
-import type { LaunchFloorCell, LaunchMissionModule, LaunchMissionRequest, LaunchMissionResponse } from "@/types/api";
+import type { LaunchFloorCell, LaunchMissionModule, LaunchMissionRequest } from "@/types/api";
 import { MODULE_COLOR_PALETTE, DEFAULT_MODULE_COLOR } from "@/constants/colors";
 import { FLASH_INTERVAL, FLASH_TOTAL_DURATION } from "@/constants/flash";
 import {
@@ -60,11 +53,8 @@ import {
 
 
 export default function Page() {
-  const router = useRouter();
   const [config] = useAtom(moduleMakerConfigAtom);
-  const [user, setUser] = useAtom(userAtom);
-  const setMissionReport = useSetAtom(missionReportAtom);
-  const setPlayerLaunchStatus = useSetAtom(playerLanunchStatusAtom);
+  const [, setUser] = useAtom(userAtom);
   const { habitat_floors: rawFloors, habitat_modules: rawModules } = config;
   const floors = useMemo(
     () =>
@@ -106,13 +96,8 @@ export default function Page() {
   const [flashTick, setFlashTick] = useState(0);
   const textureCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const [textureVersion, setTextureVersion] = useState(0);
-  const launchControllerRef = useRef<AbortController | null>(null);
-  const postLaunchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const maxDistanceRef = useRef<number | null>(null);
   const relationshipIssuesRef = useRef<Set<string>>(new Set());
-  const [launchState, setLaunchState] = useState<{ active: boolean; loading: boolean; success: boolean }>(
-    () => ({ active: false, loading: false, success: false })
-  );
 
   const selectedAsset = useMemo(() => {
     if (!selectedAssetId) return null;
@@ -489,18 +474,6 @@ export default function Page() {
     setIsMovingGroup(false);
     setMovingGroup(null);
   }, [selectedFloorIndex]);
-
-  useEffect(() => {
-    return () => {
-      if (launchControllerRef.current) {
-        launchControllerRef.current.abort();
-        launchControllerRef.current = null;
-      }
-      if (postLaunchTimerRef.current) {
-        clearTimeout(postLaunchTimerRef.current);
-      }
-    };
-  }, []);
 
   const currentCells = useMemo(() => paintedFloors.get(floorIdentifier) ?? new Map<string, CellData>(), [paintedFloors, floorIdentifier]);
 
@@ -1279,271 +1252,77 @@ export default function Page() {
     [moduleColorMap]
   );
 
-  const handleLaunch = useCallback(async () => {
-    if (postLaunchTimerRef.current) {
-      clearTimeout(postLaunchTimerRef.current);
-      postLaunchTimerRef.current = null;
-    }
-
-    if (launchControllerRef.current) {
-      launchControllerRef.current.abort();
-      launchControllerRef.current = null;
-    }
-
-    setMissionReport(null);
-    const persistLaunchStatus = (status: PlayerLaunchStatus) => {
-      if (typeof window === "undefined") {
-        return;
-      }
-
-      try {
-        window.sessionStorage.setItem("player-launch-status", JSON.stringify(status));
-      } catch (storageError) {
-        console.warn("Não foi possível persistir o status de lançamento.", storageError);
-      }
-    };
-
-    const initialStatus: PlayerLaunchStatus = { phase: "launching", response: null, lastUpdatedAt: null };
-    setPlayerLaunchStatus(initialStatus);
-    persistLaunchStatus(initialStatus);
-    const controller = new AbortController();
-    launchControllerRef.current = controller;
-
-    setLaunchState({ active: true, loading: true, success: false });
-
-    const payload = buildLaunchPayload();
-
-    try {
-      const response = await fetch("/api/launch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        let fallbackMessage = `Falha ao contatar o serviço (status ${response.status}).`;
-        try {
-          const errorBody = (await response.json()) as Partial<LaunchMissionResponse>;
-          if (errorBody?.message) {
-            fallbackMessage = errorBody.message;
-          }
-        } catch (parseError) {
-          console.warn("Não foi possível ler a resposta de erro do serviço.", parseError);
-        }
-        throw new Error(fallbackMessage);
-      }
-      const rawResult = (await response.json()) as LaunchMissionResponse;
-
-      if (controller.signal.aborted) {
-        return;
-      }
-
-      const timestamp = rawResult.receivedAt ?? new Date().toISOString();
-      let receivedAt: string;
-      try {
-        receivedAt = new Date(timestamp).toISOString();
-      } catch {
-        receivedAt = new Date().toISOString();
-      }
-
-      const resolvedScore = Number.isFinite(rawResult.score) ? rawResult.score : user.score;
-      const normalizedImages = normalizeImages(rawResult.images);
-      const hasPdfPayload = Boolean(rawResult.pdfBase64);
-      const pdfMimeType = hasPdfPayload ? rawResult.pdfMimeType ?? "application/pdf" : undefined;
-      const pdfFileName = hasPdfPayload ? rawResult.pdfFileName ?? makeReportFileName(config.name) : undefined;
-
-      const normalizedResult: LaunchMissionResponse = {
-        ...rawResult,
-        score: resolvedScore,
-        receivedAt,
-        pdfBase64: rawResult.pdfBase64 ?? "",
-        pdfMimeType,
-        pdfFileName,
-        images: normalizedImages.map(({ name, base64, mimeType }) => ({ name, base64, mimeType })),
-        insights: rawResult.insights ?? { negative: [], positive: [] },
-        worsePoints: rawResult.worsePoints ?? [],
-        improvementPoints: rawResult.improvementPoints ?? [],
-      };
-      const launchPhase: "success" | "failure" = resolvedScore > 0 ? "success" : "failure";
-
-      const successStatus: PlayerLaunchStatus = {
-        phase: launchPhase,
-        response: normalizedResult,
-        lastUpdatedAt: receivedAt,
-      };
-
-      setPlayerLaunchStatus(successStatus);
-      persistLaunchStatus(successStatus);
-
-      setMissionReport({
-        status: launchPhase === "success" ? "success" : "error",
-        message:
-          normalizedResult.message ??
-          (launchPhase === "success" ? "Plano aprovado." : "Plano rejeitado."),
-        score: resolvedScore,
-        pdf: hasPdfPayload
-          ? {
-              base64: normalizedResult.pdfBase64,
-              mimeType: normalizedResult.pdfMimeType ?? "application/pdf",
-              fileName: normalizedResult.pdfFileName ?? makeReportFileName(config.name),
-            }
-          : null,
-        images: normalizedImages.map(({ name, base64, mimeType }) => ({ name, base64, mimeType })),
-        gallery: normalizedImages.map((entry) => entry.dataUrl),
-        insights: normalizedResult.insights,
-        worsePoints: normalizedResult.worsePoints,
-        improvementPoints: normalizedResult.improvementPoints,
-        receivedAt,
-      });
-
-      setLaunchState({ active: true, loading: false, success: launchPhase === "success" });
-
-      if (launchPhase === "success") {
-        const previousScore = user.score ?? 0;
-        const delta = resolvedScore - previousScore;
-        logMissionEvent(
-          normalizedResult.message ?? `Plano enviado com sucesso. Nova pontuação: ${resolvedScore}.`,
-          delta,
-          "success"
-        );
-      } else {
-        logMissionEvent(
-          normalizedResult.message ?? "Plano rejeitado pelo sistema.",
-          0,
-          "error"
-        );
-      }
-
-      postLaunchTimerRef.current = setTimeout(() => {
-        router.push("/relatorios");
-      }, 3000);
-    } catch (error) {
-      if (controller.signal.aborted) {
-        return;
-      }
-
-      const message =
-        error instanceof Error ? error.message : "Não foi possível contatar o serviço de avaliação.";
-
-      const failureTimestamp = new Date().toISOString();
-      const fallbackResponse: LaunchMissionResponse = {
-        success: false,
-        message,
-        score: user.score,
-        pdfBase64: "",
-        images: [],
-        worsePoints: [],
-        improvementPoints: [],
-        insights: { negative: [], positive: [] },
-        receivedAt: failureTimestamp,
-      };
-
-      setMissionReport({
-        status: "error",
-        message,
-        score: user.score,
-        pdf: null,
-        images: [],
-        gallery: [],
-        insights: { negative: [], positive: [] },
-        worsePoints: [],
-        improvementPoints: [],
-        receivedAt: failureTimestamp,
-      });
-
-      const failureStatus: PlayerLaunchStatus = {
-        phase: "failure",
-        response: fallbackResponse,
-        lastUpdatedAt: failureTimestamp,
-      };
-
-      setPlayerLaunchStatus(failureStatus);
-      persistLaunchStatus(failureStatus);
-      setLaunchState({ active: true, loading: false, success: false });
-      logMissionEvent(message, 0, "error");
-
-      postLaunchTimerRef.current = setTimeout(() => {
-        router.push("/relatorios");
-      }, 3000);
-    } finally {
-      if (launchControllerRef.current === controller) {
-        launchControllerRef.current = null;
-      }
-    }
-  }, [
-    buildLaunchPayload,
-    config.name,
-    logMissionEvent,
-    makeReportFileName,
-    router,
-    setMissionReport,
-    setPlayerLaunchStatus,
-    user.score,
-  ]);
 
   const boardPixelWidth = currentFloor ? currentFloor.x * cellSize : 0;
   const boardPixelHeight = currentFloor ? currentFloor.y * cellSize : 0;
 
   return (
-    <>
-      <div className="min-h-[100dvh] overflow-hidden bg-slate-950 pb-6 pt-8 text-cyan-100 md:pt-14">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 sm:px-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-col gap-3">
-              <PlayerScore />
-              <FloorSelector
-                floors={floorsWithUsage}
-                selectedFloorIndex={selectedFloorIndex}
-                onSelectFloor={setSelectedFloorIndex}
-              />
-            </div>
-          </div>
-
-          <div className="mx-auto flex w-full max-w-5xl flex-row items-start overflow-x-auto">
-            <div className="flex-1 min-w-0 pr-3">
-              <div className="relative w-full rounded-3xl border border-cyan-500/20 bg-slate-900/70 px-2 pb-4 pt-2 shadow-xl">
-                <div
-                  className="mx-auto w-full max-w-[90vw] overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-950/80"
-                  style={{ maxWidth: boardPixelWidth || undefined, maxHeight: boardPixelHeight || undefined }}
-                >
-                  <canvas
-                    ref={canvasRef}
-                    className="h-auto w-full touch-none"
-                    style={{ touchAction: "none" }}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handlePointerUp}
-                    onMouseLeave={() => {
-                      if (isPainting || isMovingGroup) finishInteraction();
-                    }}
-                    onTouchStart={handleTouchStart}
-                    onTouchMove={handleTouchMove}
-                    onTouchEnd={handlePointerUp}
+    <LaunchController
+      buildPayload={buildLaunchPayload}
+      missionName={config.name}
+      onLogMissionEvent={logMissionEvent}
+    >
+      {({ launch, launchState }) => (
+        <>
+          <div className="min-h-[100dvh] overflow-hidden bg-slate-950 pb-6 pt-8 text-cyan-100 md:pt-14">
+            <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 sm:px-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-3">
+                  <PlayerScore />
+                  <FloorSelector
+                    floors={floorsWithUsage}
+                    selectedFloorIndex={selectedFloorIndex}
+                    onSelectFloor={setSelectedFloorIndex}
                   />
                 </div>
               </div>
-            </div>
 
-            <div className="flex-shrink-0 lg:sticky lg:top-28">
-              <Tools
-                assets={assets}
-                onSelectTool={handleSelectTool}
-                onSelectAsset={handleSelectAsset}
-                onAssetsChange={handleAssetsChange}
-                onLaunch={handleLaunch}
-                launching={launchState.active}
-              />
+              <div className="mx-auto flex w-full max-w-5xl flex-row items-start overflow-x-auto">
+                <div className="flex-1 min-w-0 pr-3">
+                  <div className="relative w-full rounded-3xl border border-cyan-500/20 bg-slate-900/70 px-2 pb-4 pt-2 shadow-xl">
+                    <div
+                      className="mx-auto w-full max-w-[90vw] overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-950/80"
+                      style={{ maxWidth: boardPixelWidth || undefined, maxHeight: boardPixelHeight || undefined }}
+                    >
+                      <canvas
+                        ref={canvasRef}
+                        className="h-auto w-full touch-none"
+                        style={{ touchAction: "none" }}
+                        onMouseDown={handleMouseDown}
+                        onMouseMove={handleMouseMove}
+                        onMouseUp={handlePointerUp}
+                        onMouseLeave={() => {
+                          if (isPainting || isMovingGroup) finishInteraction();
+                        }}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handlePointerUp}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex-shrink-0 lg:sticky lg:top-28">
+                  <Tools
+                    assets={assets}
+                    onSelectTool={handleSelectTool}
+                    onSelectAsset={handleSelectAsset}
+                    onAssetsChange={handleAssetsChange}
+                    onLaunch={launch}
+                    launching={launchState.active}
+                  />
+                </div>
+              </div>
+
+              {launchState.active && (
+                <div className="mx-auto w-full max-w-5xl">
+                  <Launcher loading={launchState.loading} success={launchState.success} />
+                </div>
+              )}
             </div>
           </div>
-
-          {launchState.active && (
-            <div className="mx-auto w-full max-w-5xl">
-              <Launcher loading={launchState.loading} success={launchState.success} />
-            </div>
-          )}
-        </div>
-      </div>
-    </>
+        </>
+      )}
+    </LaunchController>
   );
 }

@@ -22,9 +22,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const fontClassName = `${geistSans.variable} ${geistMono.variable}`;
+
   return (
+    <div className={fontClassName}>
 		<JotaiProviders>
 			{children}
 		</JotaiProviders>
+    </div>
   );
 }

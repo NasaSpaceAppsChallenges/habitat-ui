@@ -1,10 +1,14 @@
 "use client";
 
-import { FC, useMemo } from "react";
+import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DotLottieReact } from "@lottiefiles/dotlottie-react";
+import type { DotLottie } from "@lottiefiles/dotlottie-web";
 
-const SUCCESS_LOTTIE = "/json_files/check_success.lottie";
+const INTRO_LOTTIE = "/json_files/controls/RocketLaunch.lottie";
+const LOADING_LOTTIE = "/json_files/controls/RocketLoading.lottie";
+const SUCCESS_LOTTIE = "/json_files/controls/RocketLand.lottie";
+const FAILURE_LOTTIE = "/json_files/controls/Errorfailure.lottie";
 
 export type LauncherProps = {
   loading: boolean;
@@ -12,21 +16,106 @@ export type LauncherProps = {
 };
 
 export const Launcher: FC<LauncherProps> = ({ loading, success }) => {
-  const state = useMemo<"loading" | "success" | "failure">(() => {
-    if (loading) return "loading";
+  type DisplayStage = "intro" | "loading" | "success" | "failure";
+
+  const [stage, setStage] = useState<DisplayStage>(() => {
+    if (loading) return "intro";
     return success ? "success" : "failure";
+  });
+
+  const prevLoadingRef = useRef<boolean>(loading);
+  const introAnimationRef = useRef<DotLottie | null>(null);
+
+  useEffect(() => {
+    const prevLoading = prevLoadingRef.current;
+
+    if (loading && !prevLoading) {
+      setStage("intro");
+    }
+
+    if (!loading) {
+      setStage(success ? "success" : "failure");
+    }
+
+    prevLoadingRef.current = loading;
   }, [loading, success]);
 
-  const statusCopy = useMemo(() => {
-    switch (state) {
-      case "loading":
-        return { title: "Preparando lançamento", description: "Verificando sistemas e calibrando propulsores." };
-      case "success":
-        return { title: "Decolagem bem-sucedida!", description: "A nave entrou em órbita com todos os parâmetros estáveis." };
-      default:
-        return { title: "Falha no lançamento", description: "Reveja os módulos e tente novamente quando estiver pronto." };
+  const handleIntroComplete = useCallback(() => {
+    if (loading) {
+      setStage("loading");
+    } else {
+      setStage(success ? "success" : "failure");
     }
-  }, [state]);
+  }, [loading, success]);
+
+  const attachIntroRef = useCallback(
+    (instance: DotLottie | null) => {
+      if (introAnimationRef.current) {
+        introAnimationRef.current.removeEventListener("complete", handleIntroComplete);
+      }
+
+      introAnimationRef.current = instance;
+
+      if (instance) {
+        instance.addEventListener("complete", handleIntroComplete);
+      }
+    },
+    [handleIntroComplete]
+  );
+
+  useEffect(() => () => {
+    if (introAnimationRef.current) {
+      introAnimationRef.current.removeEventListener("complete", handleIntroComplete);
+      introAnimationRef.current = null;
+    }
+  }, [handleIntroComplete]);
+
+  useEffect(() => {
+    if (stage !== "intro") {
+      return;
+    }
+
+    let timer: number | null = null;
+
+    if (typeof window !== "undefined") {
+      timer = window.setTimeout(() => {
+        if (stage === "intro") {
+          handleIntroComplete();
+        }
+      }, 3200);
+    }
+
+    return () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [handleIntroComplete, stage]);
+
+  const statusCopy = useMemo(() => {
+    switch (stage) {
+      case "intro":
+        return {
+          title: "Lançando o foguete",
+          description: "Motores acionando e coletando telemetria inicial.",
+        };
+      case "loading":
+        return {
+          title: "Propulsores aquecidos",
+          description: "Monitorando parâmetros da missão enquanto esperamos a resposta.",
+        };
+      case "success":
+        return {
+          title: "Pouso confirmado!",
+          description: "A nave se estabilizou e os relatórios estão prontos para análise.",
+        };
+      default:
+        return {
+          title: "Falha na manobra",
+          description: "Reavalie o plano e tente novamente com ajustes finos.",
+        };
+    }
+  }, [stage]);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm">
@@ -47,45 +136,70 @@ export const Launcher: FC<LauncherProps> = ({ loading, success }) => {
         transition={{ duration: 0.35, ease: "easeOut" }}
       >
         <AnimatePresence mode="wait" initial={false}>
-          {state === "loading" && (
+          {stage === "intro" && (
             <motion.div
-              key="loading"
-              initial={{ opacity: 0, y: 12 }}
+              key="intro"
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
-              className="flex flex-col items-center gap-4"
+              transition={{ duration: 0.32, ease: "easeOut" }}
+              className="flex flex-col items-center gap-5"
             >
-              <LoadingAnimation />
-              <span className="text-base font-medium text-cyan-200/90">Sincronizando sistemas...</span>
+              <DotLottieReact
+                src={INTRO_LOTTIE}
+                loop={false}
+                autoplay
+                style={{ width: 140, height: 140 }}
+                dotLottieRefCallback={attachIntroRef}
+              />
+              <span className="text-base font-semibold text-cyan-100/90">Contagem regressiva finalizada...</span>
             </motion.div>
           )}
 
-          {state === "success" && (
+          {stage === "loading" && (
+            <motion.div
+              key="loading"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.28, ease: "easeOut" }}
+              className="flex flex-col items-center gap-5"
+            >
+              <DotLottieReact
+                src={LOADING_LOTTIE}
+                loop
+                autoplay
+                style={{ width: 130, height: 130 }}
+              />
+              <span className="text-base font-medium text-cyan-200/85">Telemetria em tempo real...</span>
+            </motion.div>
+          )}
+
+          {stage === "success" && (
             <motion.div
               key="success"
-              initial={{ opacity: 0, scale: 0.92 }}
+              initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.28, ease: "easeOut" }}
-              className="flex flex-col items-center gap-4"
+              transition={{ duration: 0.3, ease: "easeOut" }}
+              className="flex flex-col items-center gap-5"
             >
-              <SuccessAnimation />
+              <DotLottieReact src={SUCCESS_LOTTIE} loop={false} autoplay style={{ width: 140, height: 140 }} />
               <span className="text-base font-semibold text-emerald-300">Trajetória nominal confirmada!</span>
             </motion.div>
           )}
 
-          {state === "failure" && (
+          {stage === "failure" && (
             <motion.div
               key="failure"
-              initial={{ opacity: 0, scale: 0.92 }}
+              initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.28, ease: "easeOut" }}
-              className="flex flex-col items-center gap-4"
+              transition={{ duration: 0.3, ease: "easeOut" }}
+              className="flex flex-col items-center gap-5"
             >
-              <FailureAnimation />
-              <span className="text-base font-semibold text-rose-300">Abortado. Parâmetros fora da faixa segura!</span>
+              <DotLottieReact src={FAILURE_LOTTIE} loop={false} autoplay style={{ width: 140, height: 140 }} />
+              <span className="text-base font-semibold text-rose-300">Abortado. Ajuste seu plano e tente novamente.</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -99,69 +213,6 @@ export const Launcher: FC<LauncherProps> = ({ loading, success }) => {
   );
 };
 
-const LoadingAnimation: FC = () => (
-  <div className="relative flex h-24 w-24 items-center justify-center">
-    <motion.div
-      className="absolute inset-0 rounded-full border border-cyan-500/30"
-      animate={{ rotate: 360 }}
-      transition={{ repeat: Infinity, ease: "linear", duration: 3.2 }}
-    />
-    <motion.div
-      className="relative flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-b from-cyan-500/40 via-sky-500/30 to-transparent"
-      animate={{ y: [-6, 6, -6] }}
-      transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
-    >
-      <RocketIcon className="h-8 w-8 text-cyan-100" />
-      <motion.div
-        className="absolute bottom-1 h-3 w-3 rounded-full bg-gradient-to-b from-amber-400 via-orange-500 to-rose-600 blur-[2px]"
-        animate={{ scale: [0.9, 1.15, 0.9], opacity: [0.7, 1, 0.7] }}
-        transition={{ repeat: Infinity, duration: 0.6, ease: "easeInOut" }}
-      />
-    </motion.div>
-  </div>
-);
-
-const SuccessAnimation: FC = () => (
-  <div className="flex h-24 w-24 items-center justify-center">
-    <DotLottieReact src={SUCCESS_LOTTIE} autoplay loop={false} style={{ width: 90, height: 90 }} />
-  </div>
-);
-
-const FailureAnimation: FC = () => (
-  <div className="relative flex h-24 w-24 items-center justify-center">
-    <motion.div
-      className="absolute h-16 w-16 rounded-full bg-rose-500/20"
-      initial={{ scale: 0.5, opacity: 0.6 }}
-      animate={{ scale: [0.6, 1.1, 0.7], opacity: [0.6, 0.2, 0.6] }}
-      transition={{ repeat: Infinity, duration: 1.4, ease: "easeInOut" }}
-    />
-    <motion.div
-      className="relative flex h-12 w-12 items-center justify-center"
-      animate={{ rotate: [0, 8, -8, 0] }}
-      transition={{ repeat: Infinity, duration: 1.8, ease: "easeInOut" }}
-    >
-      <span className="absolute h-10 w-1.5 rotate-45 rounded-full bg-rose-300 shadow-lg shadow-rose-500/40" />
-      <span className="absolute h-10 w-1.5 -rotate-45 rounded-full bg-rose-300 shadow-lg shadow-rose-500/40" />
-    </motion.div>
-  </div>
-);
-
-const RocketIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.8}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M4 12l4.5-4.5a7 7 0 019.9 9.9L14 21l-2.5-2.5" />
-    <path d="M9 6l3 3" />
-    <path d="M5 12l-1 5 5-1" />
-    <path d="M15 9l3 3" />
-  </svg>
-);
-
 export default Launcher;
+
+export { LaunchController } from "./LaunchController";
