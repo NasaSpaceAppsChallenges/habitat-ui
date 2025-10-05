@@ -74,11 +74,6 @@ const mapExternalResponse = (
     images: sanitizeImageAssets(raw.images),
     worsePoints: negativeInsights,
     improvementPoints: positiveInsights,
-    insights: {
-      negative: negativeInsights,
-      positive: positiveInsights,
-    },
-    receivedAt: new Date().toISOString(),
   };
 };
 
@@ -139,8 +134,6 @@ export async function POST(request: Request) {
         pdfFileName: undefined,
         worsePoints: [],
         improvementPoints: [],
-        insights: { negative: [], positive: [] },
-        receivedAt: new Date().toISOString(),
       },
       { status: 400 }
     );
@@ -163,8 +156,6 @@ export async function POST(request: Request) {
         images: [],
         worsePoints: [],
         improvementPoints: [],
-        insights: { negative: [], positive: [] },
-        receivedAt: new Date().toISOString(),
       },
       { status: 502 }
     );

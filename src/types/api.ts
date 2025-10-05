@@ -1,8 +1,4 @@
-import type {
-  ModuleTypes,
-  RelationshipInsight,
-  RelationshipSummary,
-} from "@/app/jotai/moduleMakerConfigAtom";
+import type { ModuleTypes, RelationshipInsight } from "@/app/jotai/moduleMakerConfigAtom";
 
 export type LayoutModuleType = ModuleTypes | "corridor";
 
@@ -79,6 +75,4 @@ export type LaunchMissionResponse = {
   images: LaunchMissionImage[];
   worsePoints: RelationshipInsight[];
   improvementPoints: RelationshipInsight[];
-  insights: RelationshipSummary;
-  receivedAt: string;
 };

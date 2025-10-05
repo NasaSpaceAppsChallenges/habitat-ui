@@ -122,8 +122,6 @@ export function LaunchController({
         images: [],
         worsePoints: [],
         improvementPoints: [],
-        insights: { negative: [], positive: [] },
-        receivedAt: failureTimestamp,
       };
 
       setMissionReport({
@@ -133,10 +131,8 @@ export function LaunchController({
         pdf: null,
         images: [],
         gallery: [],
-        insights: { negative: [], positive: [] },
         worsePoints: [],
         improvementPoints: [],
-        receivedAt: failureTimestamp,
       });
 
       const failureStatus: PlayerLaunchStatus = {
@@ -182,15 +178,7 @@ export function LaunchController({
         return;
       }
 
-      const timestamp = rawResult.receivedAt ?? new Date().toISOString();
-      const receivedAt = (() => {
-        try {
-          return new Date(timestamp).toISOString();
-        } catch {
-          return new Date().toISOString();
-        }
-      })();
-
+      const eventTimestamp = new Date().toISOString();
       const resolvedScore = Number.isFinite(rawResult.score) ? rawResult.score : user.score;
       const normalizedImages = normalizeImages(rawResult.images);
       const hasPdfPayload = Boolean(rawResult.pdfBase64);
@@ -202,12 +190,10 @@ export function LaunchController({
       const normalizedResult: LaunchMissionResponse = {
         ...rawResult,
         score: resolvedScore,
-        receivedAt,
         pdfBase64: rawResult.pdfBase64 ?? "",
         pdfMimeType,
         pdfFileName,
         images: normalizedImages.map(({ name, base64, mimeType }) => ({ name, base64, mimeType })),
-        insights: rawResult.insights ?? { negative: [], positive: [] },
         worsePoints: rawResult.worsePoints ?? [],
         improvementPoints: rawResult.improvementPoints ?? [],
       };
@@ -217,7 +203,7 @@ export function LaunchController({
       const successStatus: PlayerLaunchStatus = {
         phase: launchPhase,
         response: normalizedResult,
-        lastUpdatedAt: receivedAt,
+        lastUpdatedAt: eventTimestamp,
       };
 
       setPlayerLaunchStatus(successStatus);
@@ -238,10 +224,8 @@ export function LaunchController({
           : null,
         images: normalizedImages.map(({ name, base64, mimeType }) => ({ name, base64, mimeType })),
         gallery: normalizedImages.map((entry) => entry.dataUrl),
-        insights: normalizedResult.insights,
         worsePoints: normalizedResult.worsePoints,
         improvementPoints: normalizedResult.improvementPoints,
-        receivedAt,
       });
 
       setLaunchState({ active: true, loading: false, success: launchPhase === "success" });
@@ -279,8 +263,6 @@ export function LaunchController({
         images: [],
         worsePoints: [],
         improvementPoints: [],
-        insights: { negative: [], positive: [] },
-        receivedAt: failureTimestamp,
       };
 
       setMissionReport({
@@ -290,10 +272,8 @@ export function LaunchController({
         pdf: null,
         images: [],
         gallery: [],
-        insights: { negative: [], positive: [] },
         worsePoints: [],
         improvementPoints: [],
-        receivedAt: failureTimestamp,
       });
 
       const failureStatus: PlayerLaunchStatus = {

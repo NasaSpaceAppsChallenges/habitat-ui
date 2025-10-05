@@ -91,10 +91,8 @@ export type MissionReportState = {
     mimeType: string;
   }>;
   gallery: string[];
-  insights: RelationshipSummary;
   worsePoints: RelationshipInsight[];
   improvementPoints: RelationshipInsight[];
-  receivedAt: string;
 };
 
 const toRelationships = (
