@@ -12,6 +12,8 @@ import '@leandrodasilva/welcome-page/floating-in-space';
 import '@leandrodasilva/welcome-page/description-step';
 import {WelcomePage} from '@leandrodasilva/welcome-page';
 import {useRouter} from "next/navigation";
+import {useAtom} from "jotai/index";
+import {moduleMakerConfigAtom} from "@/app/jotai/moduleMakerConfigAtom";
 
 const Widget = createComponent({
 	tagName: 'welcome-page',
@@ -24,6 +26,7 @@ const Widget = createComponent({
 
 export default function Home() {
 	const router = useRouter();
+	const [_, setConfig] = useAtom(moduleMakerConfigAtom);
 	const handleSubmit = async (e: Event) => {
 		console.log("form-submit event:", e);
 		const fields = (e as CustomEvent).detail as {
@@ -49,6 +52,7 @@ export default function Home() {
 		if (resp.ok) {
 			const data = await resp.json();
 			console.log("Mission created:", data);
+			setConfig(data);
 			router.push(`/playground`);
 		}
 		// router.push('/playground');
