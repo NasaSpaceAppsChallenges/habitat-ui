@@ -9,6 +9,7 @@ import '@leandrodasilva/welcome-page/mars-icon';
 import '@leandrodasilva/welcome-page/play-button';
 import '@leandrodasilva/welcome-page/astronauts-step';
 import '@leandrodasilva/welcome-page/floating-in-space';
+import '@leandrodasilva/welcome-page/description-step';
 import {WelcomePage} from '@leandrodasilva/welcome-page';
 import {useRouter} from "next/navigation";
 
