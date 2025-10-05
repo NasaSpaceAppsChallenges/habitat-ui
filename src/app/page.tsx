@@ -1,5 +1,5 @@
 "use client";
-
+import "./page.module.css"
 import React from "react";
 import {createComponent} from '@lit/react';
 import '@leandrodasilva/welcome-page/slider-astrounauts';
@@ -29,6 +29,7 @@ export default function Home() {
 	}
   return (
 		<Widget
+			className="welcome-page"
 			submit={handleSubmit}
 		/>
 	)
