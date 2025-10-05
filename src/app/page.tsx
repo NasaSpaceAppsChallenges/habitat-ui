@@ -4,6 +4,9 @@ import React from "react";
 import {createComponent} from '@lit/react';
 import '@leandrodasilva/welcome-page/slider-astrounauts';
 import '@leandrodasilva/welcome-page/mission-step';
+import '@leandrodasilva/welcome-page/moon-icon';
+import '@leandrodasilva/welcome-page/play-button';
+import '@leandrodasilva/welcome-page/astronauts-step';
 import {WelcomePage} from '@leandrodasilva/welcome-page';
 import {useRouter} from "next/navigation";
 

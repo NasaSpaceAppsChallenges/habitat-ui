@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { JotaiProviders } from "@/components/JotaiProvider";
+import Script from "next/script";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,6 +29,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased h-full`}
       >
+				<Script
+					src="https://unpkg.com/@rive-app/canvas@2.24.0"
+					strategy="beforeInteractive"
+				/>
         <JotaiProviders>
           {children}
         </JotaiProviders>
