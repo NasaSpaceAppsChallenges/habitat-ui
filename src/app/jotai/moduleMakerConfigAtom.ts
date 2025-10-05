@@ -76,6 +76,27 @@ export type UserState = {
   relationshipSummary: RelationshipSummary;
 };
 
+export type MissionReportState = {
+  status: "success" | "error";
+  message: string;
+  score: number;
+  pdf: {
+    base64: string;
+    mimeType: string;
+    fileName: string;
+  } | null;
+  images: Array<{
+    name: string;
+    base64: string;
+    mimeType: string;
+  }>;
+  gallery: string[];
+  insights: RelationshipSummary;
+  worsePoints: RelationshipInsight[];
+  improvementPoints: RelationshipInsight[];
+  receivedAt: string;
+};
+
 const toRelationships = (
   entries: Array<Record<string, unknown>> | undefined,
   pointsKey: "positivePoints" | "negativePoints"
@@ -120,3 +141,5 @@ export const userAtom = atom<UserState>({
     positive: [],
   },
 });
+
+export const missionReportAtom = atom<MissionReportState | null>(null);

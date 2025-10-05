@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import FloorSelector, { type FloorSummary } from "@/components/FloorSelector";
 import PlayerScore from "@/components/PlayerScore";
@@ -10,6 +10,7 @@ import NavBar from "@/components/NavBar";
 import {
   moduleMakerConfigAtom,
   userAtom,
+  missionReportAtom,
   type ModuleTypes as HabitatModuleType,
   type MissionEventType,
   type MissionEventCategory,
@@ -38,6 +39,7 @@ import type {
   FloorIdentifier,
   FlashEffect,
 } from "@/types/playground";
+import type { LaunchFloorCell, LaunchMissionModule, LaunchMissionRequest, LaunchMissionResponse } from "@/types/api";
 import { MODULE_COLOR_PALETTE, DEFAULT_MODULE_COLOR } from "@/constants/colors";
 import { FLASH_INTERVAL, FLASH_TOTAL_DURATION } from "@/constants/flash";
 import {
@@ -57,12 +59,47 @@ const formatModuleLabel = (value: string) =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 
+const makeReportFileName = (missionName: string | undefined) => {
+  const normalized = missionName?.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") ?? "habitat";
+  const safe = normalized.replace(/^-+|-+$/g, "");
+  return `${safe || "habitat"}-relatorio.pdf`;
+};
+
+const inferImageMimeType = (name: string | undefined) => {
+  const reference = name?.toLowerCase() ?? "";
+  if (reference.endsWith(".jpg") || reference.endsWith(".jpeg")) return "image/jpeg";
+  if (reference.endsWith(".webp")) return "image/webp";
+  if (reference.endsWith(".gif")) return "image/gif";
+  return "image/png";
+};
+
+const normalizeImages = (images: LaunchMissionResponse["images"] | undefined) =>
+  (images ?? [])
+    .map((image, index) => {
+      const base64 = image?.base64 ?? "";
+      if (!base64) {
+        return null;
+      }
+
+      const mimeType = image?.mimeType ?? inferImageMimeType(image?.name);
+      const defaultExtension = mimeType.split("/")[1] ?? "png";
+      const safeName = image?.name?.trim()
+        ? image.name
+        : `imagem-${index + 1}.${defaultExtension}`;
+      const dataUrl = `data:${mimeType};base64,${base64}`;
+      return { name: safeName, base64, mimeType, dataUrl };
+    })
+    .filter(
+      (entry): entry is { name: string; base64: string; mimeType: string; dataUrl: string } => Boolean(entry)
+    );
+
 
 
 export default function Page() {
   const router = useRouter();
   const [config] = useAtom(moduleMakerConfigAtom);
-  const [, setUser] = useAtom(userAtom);
+  const [user, setUser] = useAtom(userAtom);
+  const setMissionReport = useSetAtom(missionReportAtom);
   const { habitat_floors: rawFloors, habitat_modules: rawModules } = config;
   const floors = useMemo(
     () =>
@@ -104,7 +141,7 @@ export default function Page() {
   const [flashTick, setFlashTick] = useState(0);
   const textureCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const [textureVersion, setTextureVersion] = useState(0);
-  const launchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const launchControllerRef = useRef<AbortController | null>(null);
   const postLaunchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const maxDistanceRef = useRef<number | null>(null);
   const relationshipIssuesRef = useRef<Set<string>>(new Set());
@@ -442,8 +479,9 @@ export default function Page() {
 
   useEffect(() => {
     return () => {
-      if (launchTimerRef.current) {
-        clearTimeout(launchTimerRef.current);
+      if (launchControllerRef.current) {
+        launchControllerRef.current.abort();
+        launchControllerRef.current = null;
       }
       if (postLaunchTimerRef.current) {
         clearTimeout(postLaunchTimerRef.current);
@@ -469,6 +507,92 @@ export default function Page() {
       }),
     [floors, paintedFloors]
   );
+
+  const buildLaunchPayload = useCallback((): LaunchMissionRequest => {
+    const moduleCounts = new Map<HabitatModuleType, number>();
+
+    const floorsPayload = floors.map((floor, index) => {
+      const floorKeyForUsage = (floor.level ?? index) as FloorIdentifier;
+      const floorCells = paintedFloors.get(floorKeyForUsage) ?? new Map<string, CellData>();
+      const matrix: Array<Array<LaunchFloorCell | null>> = [];
+
+      for (let y = 0; y < floor.y; y += 1) {
+        const row: Array<LaunchFloorCell | null> = [];
+        for (let x = 0; x < floor.x; x += 1) {
+          const cell = floorCells.get(`${x},${y}`);
+          if (!cell || cell.assetType === "corridor") {
+            row.push(null);
+            continue;
+          }
+
+          const moduleType = cell.assetType as HabitatModuleType;
+          moduleCounts.set(moduleType, (moduleCounts.get(moduleType) ?? 0) + 1);
+          row.push({ type: moduleType });
+        }
+        matrix.push(row);
+      }
+
+      return { matrix };
+    });
+
+    const maxWidth = floors.reduce((acc, floor) => Math.max(acc, floor.x ?? 0), 0);
+    const maxHeight = floors.reduce((acc, floor) => Math.max(acc, floor.y ?? 0), 0);
+
+    const habitatModules: LaunchMissionModule[] = (rawModules ?? [])
+      .map((module) => {
+        const quantity = moduleCounts.get(module.type) ?? 0;
+        return {
+          uuid: module.uuid,
+          name: module.name ?? module.type,
+          type: module.type,
+          quantity,
+          brief_reason: module.description ?? module.name ?? module.type,
+        };
+  })
+  .filter((module) => module.quantity > 0);
+
+    moduleCounts.forEach((quantity, moduleType) => {
+      if (quantity <= 0) {
+        return;
+      }
+
+      const alreadyPresent = habitatModules.some((module) => module.type === moduleType);
+      if (alreadyPresent) {
+        return;
+      }
+
+      habitatModules.push({
+        uuid: moduleType,
+        name: formatModuleLabel(moduleType),
+        type: moduleType,
+        quantity,
+        brief_reason: formatModuleLabel(moduleType),
+      });
+    });
+
+    const duration = Number.isFinite(config.duration)
+      ? Math.min(1000, Math.max(1, Math.round(config.duration)))
+      : 1;
+
+    const crewSize = Number.isFinite(config.crewSize)
+      ? Math.max(0, Math.round(config.crewSize))
+      : 0;
+
+    return {
+      mission: {
+        name: config.name,
+        formal_description: config.description,
+        duration,
+        crew_size: crewSize,
+        habitat_dimensions: {
+          x_width: maxWidth,
+          y_width: maxHeight,
+        },
+        habitat_modules: habitatModules,
+      },
+      floors: floorsPayload,
+    } satisfies LaunchMissionRequest;
+  }, [config.description, config.duration, config.crewSize, config.name, floors, paintedFloors, rawModules]);
 
   const assets = useMemo<ToolsProps["assets"]>(() => {
     const moduleAssets = (rawModules ?? [])
@@ -1102,24 +1226,116 @@ export default function Page() {
     [moduleColorMap]
   );
 
-  const handleLaunch = useCallback(() => {
-    if (launchTimerRef.current) {
-      clearTimeout(launchTimerRef.current);
-    }
+  const handleLaunch = useCallback(async () => {
     if (postLaunchTimerRef.current) {
       clearTimeout(postLaunchTimerRef.current);
       postLaunchTimerRef.current = null;
     }
+
+    if (launchControllerRef.current) {
+      launchControllerRef.current.abort();
+      launchControllerRef.current = null;
+    }
+
+    setMissionReport(null);
+    const controller = new AbortController();
+    launchControllerRef.current = controller;
+
     setLaunchState({ active: true, loading: true, success: false });
-    launchTimerRef.current = setTimeout(() => {
-      const didSucceed = Math.random() >= 0.5;
-      setLaunchState({ active: true, loading: false, success: didSucceed });
-      launchTimerRef.current = null;
-      postLaunchTimerRef.current = setTimeout(() => {
-        router.push("/relatorios");
-      }, 3500);
-    }, 2500);
-  }, [router]);
+
+    const payload = buildLaunchPayload();
+
+    try {
+      const response = await fetch("/api/launch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        let fallbackMessage = `Falha ao contatar o serviço (status ${response.status}).`;
+        try {
+          const errorBody = (await response.json()) as Partial<LaunchMissionResponse>;
+          if (errorBody?.message) {
+            fallbackMessage = errorBody.message;
+          }
+        } catch (parseError) {
+          console.warn("Não foi possível ler a resposta de erro do serviço.", parseError);
+        }
+        throw new Error(fallbackMessage);
+      }
+
+      const result = (await response.json()) as LaunchMissionResponse;
+
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      const isSuccess = Boolean(result.success);
+      const resolvedScore = Number.isFinite(result.score) ? result.score : user.score;
+      const normalizedImages = normalizeImages(result.images);
+
+      setMissionReport({
+        status: isSuccess ? "success" : "error",
+        message: result.message ?? (isSuccess ? "Plano aprovado." : "Plano rejeitado."),
+        score: resolvedScore,
+        pdf: result.pdfBase64
+          ? {
+              base64: result.pdfBase64,
+              mimeType: result.pdfMimeType ?? "application/pdf",
+              fileName: result.pdfFileName ?? makeReportFileName(config.name),
+            }
+          : null,
+        images: normalizedImages.map(({ name, base64, mimeType }) => ({ name, base64, mimeType })),
+        gallery: normalizedImages.map((entry) => entry.dataUrl),
+        insights: result.insights ?? { negative: [], positive: [] },
+        worsePoints: result.worsePoints ?? [],
+        improvementPoints: result.improvementPoints ?? [],
+        receivedAt: result.receivedAt ?? new Date().toISOString(),
+      });
+
+      setLaunchState({ active: true, loading: false, success: isSuccess });
+
+      if (isSuccess) {
+        const previousScore = user.score ?? 0;
+        const delta = resolvedScore - previousScore;
+        logMissionEvent(result.message ?? `Plano enviado com sucesso. Nova pontuação: ${resolvedScore}.`, delta, "success");
+        postLaunchTimerRef.current = setTimeout(() => {
+          router.push("/relatorios");
+        }, 3500);
+      } else {
+        logMissionEvent(result.message ?? "Plano rejeitado pelo sistema.", 0, "error");
+      }
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      const message =
+        error instanceof Error ? error.message : "Não foi possível contatar o serviço de avaliação.";
+
+      setMissionReport({
+        status: "error",
+        message,
+        score: user.score,
+        pdf: null,
+        images: [],
+        gallery: [],
+        insights: { negative: [], positive: [] },
+        worsePoints: [],
+        improvementPoints: [],
+        receivedAt: new Date().toISOString(),
+      });
+
+      setLaunchState({ active: true, loading: false, success: false });
+      logMissionEvent(message, 0, "error");
+    } finally {
+      if (launchControllerRef.current === controller) {
+        launchControllerRef.current = null;
+      }
+    }
+  }, [buildLaunchPayload, config.name, logMissionEvent, router, setMissionReport, user.score]);
 
   const boardPixelWidth = currentFloor ? currentFloor.x * cellSize : 0;
   const boardPixelHeight = currentFloor ? currentFloor.y * cellSize : 0;
