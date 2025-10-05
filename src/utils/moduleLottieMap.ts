@@ -378,12 +378,12 @@ export const MODULE_LOTTIE_MAP: Record<ModuleAssetType, string> = {
   common_kitchen_and_mess: "/json_files/Kitchen.lottie",
   work_command_station: "/json_files/Workshop.lottie",
   multipurpose_science_medical_area: "/json_files/Laboratory.lottie",
-  dedicated_storage_logistics: "/json_files/Workshop.lottie",
-  radiation_shelter: "/json_files/Laboratory.lottie",
+  dedicated_storage_logistics: "/json_files/Storage.lottie",
+  radiation_shelter: "/json_files/Radiation.lottie",
   dedicated_wcs: "/json_files/Toilet.lottie",
   full_hygiene_station: "/json_files/Bathtub.lottie",
-  permanent_exercise_area: "/json_files/Living_Room.lottie",
-  corridor: "/json_files/Workshop.lottie",
+  permanent_exercise_area: "/json_files/Exercise.lottie",
+  corridor: "/json_files/Corridor.lottie",
 };
 
 export const MODULE_BACKGROUND_MAP: Record<ModuleAssetType, string[]> = Object.keys(

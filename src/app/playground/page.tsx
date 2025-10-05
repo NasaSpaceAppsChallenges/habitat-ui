@@ -8,6 +8,11 @@ import { Tools } from "@/components/tools/index";
 import Launcher from "@/components/launcher";
 import NavBar from "@/components/NavBar";
 import {
+  formatModuleLabel,
+  makeReportFileName,
+  normalizeImages,
+} from "./functions/helpers";
+import {
   moduleMakerConfigAtom,
   userAtom,
   missionReportAtom,
@@ -16,6 +21,7 @@ import {
   type MissionEventCategory,
   type RelationshipInsight,
 } from "@/app/jotai/moduleMakerConfigAtom";
+import { playerLanunchStatusAtom } from "@/app/jotai/playerlaunchStatusAtom";
 import { ModuleRelationships } from "@/utils/moduleRelationShip";
 import {
   DEFAULT_MODULE_LOTTIE,
@@ -52,47 +58,6 @@ import {
   DESKTOP_RESERVED_VERTICAL,
 } from "@/utils/cellSizing";
 
-const formatModuleLabel = (value: string) =>
-  value
-    .split(/[_\s]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-
-const makeReportFileName = (missionName: string | undefined) => {
-  const normalized = missionName?.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") ?? "habitat";
-  const safe = normalized.replace(/^-+|-+$/g, "");
-  return `${safe || "habitat"}-relatorio.pdf`;
-};
-
-const inferImageMimeType = (name: string | undefined) => {
-  const reference = name?.toLowerCase() ?? "";
-  if (reference.endsWith(".jpg") || reference.endsWith(".jpeg")) return "image/jpeg";
-  if (reference.endsWith(".webp")) return "image/webp";
-  if (reference.endsWith(".gif")) return "image/gif";
-  return "image/png";
-};
-
-const normalizeImages = (images: LaunchMissionResponse["images"] | undefined) =>
-  (images ?? [])
-    .map((image, index) => {
-      const base64 = image?.base64 ?? "";
-      if (!base64) {
-        return null;
-      }
-
-      const mimeType = image?.mimeType ?? inferImageMimeType(image?.name);
-      const defaultExtension = mimeType.split("/")[1] ?? "png";
-      const safeName = image?.name?.trim()
-        ? image.name
-        : `imagem-${index + 1}.${defaultExtension}`;
-      const dataUrl = `data:${mimeType};base64,${base64}`;
-      return { name: safeName, base64, mimeType, dataUrl };
-    })
-    .filter(
-      (entry): entry is { name: string; base64: string; mimeType: string; dataUrl: string } => Boolean(entry)
-    );
-
 
 
 export default function Page() {
@@ -100,6 +65,7 @@ export default function Page() {
   const [config] = useAtom(moduleMakerConfigAtom);
   const [user, setUser] = useAtom(userAtom);
   const setMissionReport = useSetAtom(missionReportAtom);
+  const setPlayerLaunchStatus = useSetAtom(playerLanunchStatusAtom);
   const { habitat_floors: rawFloors, habitat_modules: rawModules } = config;
   const floors = useMemo(
     () =>
@@ -204,11 +170,8 @@ export default function Page() {
       if (!textures.length) {
         return { textureUrl: DEFAULT_MODULE_TEXTURES[0], textureIndex: 0 };
       }
-      const capacity = Number.isFinite(asset.quantity)
-        ? Math.max(asset.quantity, textures.length)
-        : Math.max(textures.length, 1);
-      const normalized = Math.max(0, Math.min(1, (newPlacedCount - 1) / capacity));
-      const variantIndex = Math.min(textures.length - 1, Math.floor(normalized * textures.length));
+      const spread = Math.max(1, Math.floor(textures.length / 2));
+      const variantIndex = ((newPlacedCount - 1) * spread) % textures.length;
       return { textureUrl: textures[variantIndex], textureIndex: variantIndex };
     },
     []
@@ -245,33 +208,84 @@ export default function Page() {
         cellsWithSameAsset.map(({ key, x, y }) => ({ key, x, y }))
       );
 
-      const sortedCells = [...cellsWithSameAsset].sort((a, b) =>
-        a.y === b.y ? a.x - b.x : a.y - b.y
-      );
-
       const fallbackTextures = MODULE_BACKGROUND_MAP[moduleType] ?? DEFAULT_MODULE_TEXTURES;
       const normalTextures = plan.normalTextures.length ? plan.normalTextures : fallbackTextures;
-      let normalIndex = 0;
-      const startingIndex = plan.nextIndex;
+      const specialKeys = new Set(Object.keys(plan.specialAssignments));
 
-      sortedCells.forEach(({ key, cellData }) => {
+      // Apply special pattern textures first to reserve their slots.
+      cellsWithSameAsset.forEach(({ key, cellData }) => {
         const special = plan.specialAssignments[key];
-        if (special) {
-          floorMap.set(key, {
-            ...cellData,
-            textureUrl: special.textureUrl,
-            textureIndex: special.textureIndex,
-          });
+        if (!special) {
           return;
         }
 
-        const textureUrl = normalTextures[normalIndex % normalTextures.length];
         floorMap.set(key, {
           ...cellData,
-          textureUrl,
-          textureIndex: startingIndex + normalIndex,
+          textureUrl: special.textureUrl,
+          textureIndex: special.textureIndex,
         });
-        normalIndex += 1;
+      });
+
+      const remainingCells = cellsWithSameAsset.filter(({ key }) => !specialKeys.has(key));
+      if (!remainingCells.length) {
+        return;
+      }
+
+  const rows = new Map<number, Array<(typeof remainingCells)[number]>>();
+      remainingCells.forEach((cell) => {
+        const collection = rows.get(cell.y) ?? [];
+        collection.push(cell);
+        rows.set(cell.y, collection);
+      });
+
+      const orderedRows = Array.from(rows.keys()).sort((a, b) => a - b);
+      let runningTextureIndex = plan.nextIndex;
+
+      orderedRows.forEach((rowY, rowIdx) => {
+        const rowCells = rows.get(rowY) ?? [];
+        rowCells.sort((a, b) => a.x - b.x);
+
+        const rowStartIndex = normalTextures.length ? (rowIdx * 2) % normalTextures.length : 0;
+        const spacing = normalTextures.length
+          ? Math.max(1, Math.floor(normalTextures.length / Math.max(1, rowCells.length)))
+          : 1;
+
+        rowCells.forEach((cell, cellIdx) => {
+          const { key, x, y, cellData } = cell;
+          const candidateOffset = normalTextures.length
+            ? (rowStartIndex + cellIdx * spacing) % normalTextures.length
+            : 0;
+
+          let attempts = 0;
+          let chosenTexture = normalTextures.length
+            ? normalTextures[candidateOffset]
+            : fallbackTextures[0] ?? DEFAULT_MODULE_TEXTURES[0];
+
+          while (normalTextures.length && attempts < normalTextures.length) {
+            const attemptedTexture = normalTextures[(candidateOffset + attempts) % normalTextures.length];
+            const leftNeighbor = floorMap.get(`${x - 1},${y}`);
+            const topNeighbor = floorMap.get(`${x},${y - 1}`);
+
+            const clashesWithLeft =
+              leftNeighbor?.assetId === cellData.assetId && leftNeighbor.textureUrl === attemptedTexture;
+            const clashesWithTop =
+              topNeighbor?.assetId === cellData.assetId && topNeighbor.textureUrl === attemptedTexture;
+
+            if (!clashesWithLeft && !clashesWithTop) {
+              chosenTexture = attemptedTexture;
+              break;
+            }
+
+            attempts += 1;
+          }
+
+          floorMap.set(key, {
+            ...cellData,
+            textureUrl: chosenTexture,
+            textureIndex: runningTextureIndex,
+          });
+          runningTextureIndex += 1;
+        });
       });
     },
     []
@@ -800,8 +814,30 @@ export default function Page() {
     const selectHorizontalTexture = (gridX: number, gridY: number) =>
       horizontalTextures[(gridX + gridY) % horizontalTextures.length] ?? horizontalTextures[0];
 
-    const shouldPlaceDoor = (a: CellData, b: CellData) =>
-      a.assetType === "corridor" || b.assetType === "corridor";
+    const shouldPlaceDoor = (a: CellData, b: CellData) => {
+      if (a.assetId === b.assetId) {
+        return false;
+      }
+      const aIsCorridor = a.assetType === "corridor";
+      const bIsCorridor = b.assetType === "corridor";
+      if (aIsCorridor && bIsCorridor) {
+        return false;
+      }
+      return (aIsCorridor && !bIsCorridor) || (bIsCorridor && !aIsCorridor);
+    };
+
+    const makeDoorPairKey = (a: CellData, b: CellData) => {
+      const aIsCorridor = a.assetType === "corridor";
+      const bIsCorridor = b.assetType === "corridor";
+      if (!aIsCorridor && !bIsCorridor) {
+        return "";
+      }
+      const moduleId = aIsCorridor ? b.assetId : a.assetId;
+      const corridorId = aIsCorridor ? a.assetId : b.assetId;
+      return `${moduleId}|${corridorId}`;
+    };
+
+    const doorPairPlaced = new Set<string>();
 
     cellEntries.forEach(([key, cell]) => {
       const [x, y] = key.split(",").map(Number);
@@ -809,18 +845,36 @@ export default function Page() {
       if (y > 0) {
         const neighborAbove = currentCells.get(`${x},${y - 1}`);
         if (neighborAbove && neighborAbove.assetId !== cell.assetId) {
-          const textureUrl = selectHorizontalTexture(x, y);
-          drawWallSegment(textureUrl, x, y, "horizontal");
+          if (shouldPlaceDoor(cell, neighborAbove)) {
+            const doorKey = makeDoorPairKey(cell, neighborAbove);
+            if (doorKey && !doorPairPlaced.has(doorKey)) {
+              drawWallSegment(WALL_DOOR_TEXTURE, x, y, "horizontal");
+              doorPairPlaced.add(doorKey);
+            } else {
+              const textureUrl = selectHorizontalTexture(x, y);
+              drawWallSegment(textureUrl, x, y, "horizontal");
+            }
+          } else {
+            const textureUrl = selectHorizontalTexture(x, y);
+            drawWallSegment(textureUrl, x, y, "horizontal");
+          }
         }
       }
 
       if (x > 0) {
         const neighborLeft = currentCells.get(`${x - 1},${y}`);
         if (neighborLeft && neighborLeft.assetId !== cell.assetId) {
-          const textureUrl = shouldPlaceDoor(cell, neighborLeft)
-            ? WALL_DOOR_TEXTURE
-            : WALL_VERTICAL_TEXTURE;
-          drawWallSegment(textureUrl, x, y, "vertical");
+          if (shouldPlaceDoor(cell, neighborLeft)) {
+            const doorKey = makeDoorPairKey(cell, neighborLeft);
+            if (doorKey && !doorPairPlaced.has(doorKey)) {
+              drawWallSegment(WALL_DOOR_TEXTURE, x, y, "vertical");
+              doorPairPlaced.add(doorKey);
+            } else {
+              drawWallSegment(WALL_VERTICAL_TEXTURE, x, y, "vertical");
+            }
+          } else {
+            drawWallSegment(WALL_VERTICAL_TEXTURE, x, y, "vertical");
+          }
         }
       }
     });
@@ -1237,7 +1291,8 @@ export default function Page() {
       launchControllerRef.current = null;
     }
 
-    setMissionReport(null);
+  setMissionReport(null);
+  setPlayerLaunchStatus({ phase: "launching", response: null, lastUpdatedAt: null });
     const controller = new AbortController();
     launchControllerRef.current = controller;
 
@@ -1266,47 +1321,88 @@ export default function Page() {
         throw new Error(fallbackMessage);
       }
 
-      const result = (await response.json()) as LaunchMissionResponse;
+      const rawResult = (await response.json()) as LaunchMissionResponse;
 
       if (controller.signal.aborted) {
         return;
       }
 
-      const isSuccess = Boolean(result.success);
-      const resolvedScore = Number.isFinite(result.score) ? result.score : user.score;
-      const normalizedImages = normalizeImages(result.images);
+      const timestamp = rawResult.receivedAt ?? new Date().toISOString();
+      let receivedAt: string;
+      try {
+        receivedAt = new Date(timestamp).toISOString();
+      } catch {
+        receivedAt = new Date().toISOString();
+      }
+
+      const resolvedScore = Number.isFinite(rawResult.score) ? rawResult.score : user.score;
+      const normalizedImages = normalizeImages(rawResult.images);
+      const hasPdfPayload = Boolean(rawResult.pdfBase64);
+      const pdfMimeType = hasPdfPayload ? rawResult.pdfMimeType ?? "application/pdf" : undefined;
+      const pdfFileName = hasPdfPayload ? rawResult.pdfFileName ?? makeReportFileName(config.name) : undefined;
+
+      const normalizedResult: LaunchMissionResponse = {
+        ...rawResult,
+        score: resolvedScore,
+        receivedAt,
+        pdfBase64: rawResult.pdfBase64 ?? "",
+        pdfMimeType,
+        pdfFileName,
+        images: normalizedImages.map(({ name, base64, mimeType }) => ({ name, base64, mimeType })),
+        insights: rawResult.insights ?? { negative: [], positive: [] },
+        worsePoints: rawResult.worsePoints ?? [],
+        improvementPoints: rawResult.improvementPoints ?? [],
+      };
+      const launchPhase: "success" | "failure" = resolvedScore > 0 ? "success" : "failure";
+
+      setPlayerLaunchStatus({
+        phase: launchPhase,
+        response: normalizedResult,
+        lastUpdatedAt: receivedAt,
+      });
 
       setMissionReport({
-        status: isSuccess ? "success" : "error",
-        message: result.message ?? (isSuccess ? "Plano aprovado." : "Plano rejeitado."),
+        status: launchPhase === "success" ? "success" : "error",
+        message:
+          normalizedResult.message ??
+          (launchPhase === "success" ? "Plano aprovado." : "Plano rejeitado."),
         score: resolvedScore,
-        pdf: result.pdfBase64
+        pdf: hasPdfPayload
           ? {
-              base64: result.pdfBase64,
-              mimeType: result.pdfMimeType ?? "application/pdf",
-              fileName: result.pdfFileName ?? makeReportFileName(config.name),
+              base64: normalizedResult.pdfBase64,
+              mimeType: normalizedResult.pdfMimeType ?? "application/pdf",
+              fileName: normalizedResult.pdfFileName ?? makeReportFileName(config.name),
             }
           : null,
         images: normalizedImages.map(({ name, base64, mimeType }) => ({ name, base64, mimeType })),
         gallery: normalizedImages.map((entry) => entry.dataUrl),
-        insights: result.insights ?? { negative: [], positive: [] },
-        worsePoints: result.worsePoints ?? [],
-        improvementPoints: result.improvementPoints ?? [],
-        receivedAt: result.receivedAt ?? new Date().toISOString(),
+        insights: normalizedResult.insights,
+        worsePoints: normalizedResult.worsePoints,
+        improvementPoints: normalizedResult.improvementPoints,
+        receivedAt,
       });
 
-      setLaunchState({ active: true, loading: false, success: isSuccess });
+      setLaunchState({ active: true, loading: false, success: launchPhase === "success" });
 
-      if (isSuccess) {
+      if (launchPhase === "success") {
         const previousScore = user.score ?? 0;
         const delta = resolvedScore - previousScore;
-        logMissionEvent(result.message ?? `Plano enviado com sucesso. Nova pontuação: ${resolvedScore}.`, delta, "success");
-        postLaunchTimerRef.current = setTimeout(() => {
-          router.push("/relatorios");
-        }, 3500);
+        logMissionEvent(
+          normalizedResult.message ?? `Plano enviado com sucesso. Nova pontuação: ${resolvedScore}.`,
+          delta,
+          "success"
+        );
       } else {
-        logMissionEvent(result.message ?? "Plano rejeitado pelo sistema.", 0, "error");
+        logMissionEvent(
+          normalizedResult.message ?? "Plano rejeitado pelo sistema.",
+          0,
+          "error"
+        );
       }
+
+      postLaunchTimerRef.current = setTimeout(() => {
+        router.push("/relatorios");
+      }, 3000);
     } catch (error) {
       if (controller.signal.aborted) {
         return;
@@ -1314,6 +1410,19 @@ export default function Page() {
 
       const message =
         error instanceof Error ? error.message : "Não foi possível contatar o serviço de avaliação.";
+
+      const failureTimestamp = new Date().toISOString();
+      const fallbackResponse: LaunchMissionResponse = {
+        success: false,
+        message,
+        score: user.score,
+        pdfBase64: "",
+        images: [],
+        worsePoints: [],
+        improvementPoints: [],
+        insights: { negative: [], positive: [] },
+        receivedAt: failureTimestamp,
+      };
 
       setMissionReport({
         status: "error",
@@ -1325,17 +1434,31 @@ export default function Page() {
         insights: { negative: [], positive: [] },
         worsePoints: [],
         improvementPoints: [],
-        receivedAt: new Date().toISOString(),
+        receivedAt: failureTimestamp,
       });
 
+      setPlayerLaunchStatus({ phase: "failure", response: fallbackResponse, lastUpdatedAt: failureTimestamp });
       setLaunchState({ active: true, loading: false, success: false });
       logMissionEvent(message, 0, "error");
+
+      postLaunchTimerRef.current = setTimeout(() => {
+        router.push("/relatorios");
+      }, 3000);
     } finally {
       if (launchControllerRef.current === controller) {
         launchControllerRef.current = null;
       }
     }
-  }, [buildLaunchPayload, config.name, logMissionEvent, router, setMissionReport, user.score]);
+  }, [
+    buildLaunchPayload,
+    config.name,
+    logMissionEvent,
+    makeReportFileName,
+    router,
+    setMissionReport,
+    setPlayerLaunchStatus,
+    user.score,
+  ]);
 
   const boardPixelWidth = currentFloor ? currentFloor.x * cellSize : 0;
   const boardPixelHeight = currentFloor ? currentFloor.y * cellSize : 0;

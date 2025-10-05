@@ -5,7 +5,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { useAtomValue } from "jotai";
 
-import { missionReportAtom, moduleMakerConfigAtom } from "@/app/jotai/moduleMakerConfigAtom";
+import {
+  missionReportAtom,
+  moduleMakerConfigAtom,
+  type MissionReportState,
+} from "@/app/jotai/moduleMakerConfigAtom";
+import { playerLanunchStatusAtom } from "@/app/jotai/playerlaunchStatusAtom";
+import { makeReportFileName, normalizeImages } from "@/app/playground/functions/helpers";
 
 const formatModuleType = (value: string | undefined) => {
   if (!value) return "Módulo";
@@ -29,37 +35,94 @@ const formatDateTime = (iso: string | undefined) => {
 };
 
 export default function RelatoriosPage() {
+  console.log('teste')
   const missionReport = useAtomValue(missionReportAtom);
   const missionConfig = useAtomValue(moduleMakerConfigAtom);
+  const playerLaunchStatus = useAtomValue(playerLanunchStatusAtom);
+
+  console.log(playerLaunchStatus)
+
+  const fallbackReport = useMemo<MissionReportState | null>(() => {
+    const response = playerLaunchStatus.response;
+    if (!response) return null;
+
+    const normalizedImages = normalizeImages(response.images);
+    const hasPdf = Boolean(response.pdfBase64);
+
+    let receivedAt = response.receivedAt ?? playerLaunchStatus.lastUpdatedAt ?? new Date().toISOString();
+    try {
+      receivedAt = new Date(receivedAt).toISOString();
+    } catch {
+      receivedAt = new Date().toISOString();
+    }
+
+    const status: MissionReportState["status"] =
+      playerLaunchStatus.phase === "success"
+        ? "success"
+        : playerLaunchStatus.phase === "failure"
+        ? "error"
+        : response.success
+        ? "success"
+        : "error";
+
+    const message =
+      response.message ??
+      (status === "success" ? "Plano aprovado." : "Plano rejeitado.");
+
+    return {
+      status,
+      message,
+      score: Number.isFinite(response.score) ? response.score : 0,
+      pdf: hasPdf
+        ? {
+            base64: response.pdfBase64,
+            mimeType: response.pdfMimeType ?? "application/pdf",
+            fileName: response.pdfFileName ?? makeReportFileName(missionConfig.name),
+          }
+        : null,
+      images: normalizedImages.map(({ name, base64, mimeType }) => ({ name, base64, mimeType })),
+      gallery: normalizedImages.map((entry) => entry.dataUrl),
+      insights: response.insights ?? { negative: [], positive: [] },
+      worsePoints: response.worsePoints ?? [],
+      improvementPoints: response.improvementPoints ?? [],
+      receivedAt,
+    } satisfies MissionReportState;
+  }, [missionConfig.name, playerLaunchStatus]);
+
+  const effectiveReport = missionReport ?? fallbackReport;
 
   const pdfHref = useMemo(() => {
-    if (!missionReport?.pdf) return null;
-    return `data:${missionReport.pdf.mimeType};base64,${missionReport.pdf.base64}`;
-  }, [missionReport?.pdf]);
+    if (!effectiveReport?.pdf) return null;
+    return `data:${effectiveReport.pdf.mimeType};base64,${effectiveReport.pdf.base64}`;
+  }, [effectiveReport?.pdf]);
 
   const galleryItems = useMemo(() => {
-    if (!missionReport?.gallery?.length) return [];
-    const images = missionReport.images ?? [];
-    return missionReport.gallery.map((src, index) => ({
+    if (!effectiveReport?.gallery?.length) return [];
+    const images = effectiveReport.images ?? [];
+    return effectiveReport.gallery.map((src, index) => ({
       src,
       name: images[index]?.name ?? `Imagem ${index + 1}`,
     }));
-  }, [missionReport?.gallery, missionReport?.images]);
+  }, [effectiveReport?.gallery, effectiveReport?.images]);
+
+  const statusLabel = useMemo(() => {
+    if (playerLaunchStatus.phase === "launching") {
+      return "Avaliando plano";
+    }
+    if (effectiveReport) {
+      return effectiveReport.status === "success" ? "Missão nominal" : "Plano reprovado";
+    }
+    return "Aguardando lançamento";
+  }, [effectiveReport, playerLaunchStatus.phase]);
 
   const summary = useMemo(() => {
-    const statusLabel = missionReport
-      ? missionReport.status === "success"
-        ? "Missão nominal"
-        : "Plano reprovado"
-      : "Aguardando lançamento";
-
     const crewSize = missionConfig.crewSize ?? 0;
 
-    const entries = [
+    return [
       { label: "Status", value: statusLabel },
       {
         label: "Pontuação",
-        value: missionReport ? missionReport.score.toLocaleString("pt-BR") : "--",
+        value: effectiveReport ? effectiveReport.score.toLocaleString("pt-BR") : "--",
       },
       {
         label: "Tripulação",
@@ -67,13 +130,12 @@ export default function RelatoriosPage() {
       },
       {
         label: "Última atualização",
-        value: missionReport ? formatDateTime(missionReport.receivedAt) : "--",
+        value: effectiveReport ? formatDateTime(effectiveReport.receivedAt) : "--",
       },
     ];
+  }, [effectiveReport, missionConfig.crewSize, statusLabel]);
 
-    return entries;
-  }, [missionConfig.crewSize, missionReport]);
-  const insights = missionReport?.insights ?? { negative: [], positive: [] };
+  const insights = effectiveReport?.insights ?? { negative: [], positive: [] };
   const hasInsightContent = insights.positive.length > 0 || insights.negative.length > 0;
 
   return (
@@ -83,7 +145,10 @@ export default function RelatoriosPage() {
           <span className="text-xs font-semibold uppercase tracking-[0.4em] text-cyan-300/70">Relatório de Missão</span>
           <h1 className="text-3xl font-bold text-white sm:text-4xl">{missionConfig.name || "Habitat Orbital"}</h1>
           <p className="mx-auto max-w-2xl text-sm text-cyan-100/80 sm:text-base">
-            {missionReport?.message ?? "Finalize o plano de habitat no playground e lance para gerar um relatório detalhado."}
+            {effectiveReport?.message ??
+              (playerLaunchStatus.phase === "launching"
+                ? "Estamos avaliando o seu plano junto ao serviço oficial. Aguarde alguns instantes."
+                : "Finalize o plano de habitat no playground e lance para gerar um relatório detalhado.")}
           </p>
         </header>
 
@@ -110,7 +175,7 @@ export default function RelatoriosPage() {
               {pdfHref ? (
                 <a
                   href={pdfHref}
-                  download={missionReport?.pdf?.fileName ?? "relatorio-habitat.pdf"}
+                  download={effectiveReport?.pdf?.fileName ?? makeReportFileName(missionConfig.name)}
                   className="inline-flex items-center justify-center rounded-full border border-cyan-400/50 bg-cyan-500/15 px-5 py-2 text-sm font-semibold uppercase tracking-[0.28em] text-cyan-200 transition hover:border-cyan-300 hover:text-cyan-50"
                 >
                   Baixar PDF
@@ -236,7 +301,7 @@ export default function RelatoriosPage() {
 
         <footer className="pb-8 text-center text-xs text-cyan-100/60">
           <p>
-            Último relatório gerado em <strong className="text-cyan-200">{formatDateTime(missionReport?.receivedAt)}</strong>.
+            Último relatório gerado em <strong className="text-cyan-200">{formatDateTime(effectiveReport?.receivedAt)}</strong>.
             Dados simulados enquanto a API oficial está indisponível.
           </p>
         </footer>
