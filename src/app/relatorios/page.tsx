@@ -40,6 +40,25 @@ export default function RelatoriosPage() {
   const playerLaunchStatus = useAtomValue(playerLanunchStatusAtom);
   const setPlayerLaunchStatus = useSetAtom(playerLanunchStatusAtom);
 
+  const defaultLaunchStatus: PlayerLaunchStatus = useMemo(() => {
+    const timestamp = new Date().toISOString();
+    return {
+      phase: "failure",
+      lastUpdatedAt: timestamp,
+      response: {
+        success: false,
+        message: "Nenhum lançamento registrado nesta sessão.",
+        score: 0,
+        pdfBase64: "",
+        images: [],
+        worsePoints: [],
+        improvementPoints: [],
+        insights: { negative: [], positive: [] },
+        receivedAt: timestamp,
+      },
+    } satisfies PlayerLaunchStatus;
+  }, []);
+
 
   console.log("playerLaunchStatus", playerLaunchStatus);
   useEffect(() => {
@@ -52,18 +71,19 @@ export default function RelatoriosPage() {
 
     try {
       const stored = window.sessionStorage.getItem("player-launch-status");
-      if (!stored) {
-        return;
+      if (stored) {
+        const parsed = JSON.parse(stored) as PlayerLaunchStatus | null;
+        if (parsed?.response) {
+          setPlayerLaunchStatus(parsed);
+          return;
+        }
       }
-      const parsed = JSON.parse(stored) as PlayerLaunchStatus | null;
-      if (!parsed?.response) {
-        return;
-      }
-      setPlayerLaunchStatus(parsed);
+      setPlayerLaunchStatus(defaultLaunchStatus);
     } catch (storageError) {
       console.warn("Não foi possível restaurar o status do lançamento da sessão.", storageError);
+      setPlayerLaunchStatus(defaultLaunchStatus);
     }
-  }, [playerLaunchStatus.response, setPlayerLaunchStatus]);
+  }, [defaultLaunchStatus, playerLaunchStatus.response, setPlayerLaunchStatus]);
 
   const fallbackReport = useMemo<MissionReportState | null>(() => {
     const response = playerLaunchStatus.response;

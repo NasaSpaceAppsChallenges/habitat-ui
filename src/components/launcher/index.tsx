@@ -92,6 +92,29 @@ export const Launcher: FC<LauncherProps> = ({ loading, success }) => {
     };
   }, [handleIntroComplete, stage]);
 
+  const steps = useMemo(
+    () => [
+      { key: "intro" as const, label: "Lançamento" },
+      { key: "loading" as const, label: "Propulsores" },
+      {
+        key: "result" as const,
+        label: success ? "Resultados" : "Recálculo",
+      },
+    ],
+    [success]
+  );
+
+  const currentStepIndex = useMemo(() => {
+    switch (stage) {
+      case "intro":
+        return 0;
+      case "loading":
+        return 1;
+      default:
+        return 2;
+    }
+  }, [stage]);
+
   const statusCopy = useMemo(() => {
     switch (stage) {
       case "intro":
@@ -118,23 +141,46 @@ export const Launcher: FC<LauncherProps> = ({ loading, success }) => {
   }, [stage]);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[60] bg-slate-950/95 backdrop-blur-md">
       <motion.div
-        className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(56,189,248,0.08),_transparent_65%)]"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.4 }}
-        aria-hidden="true"
-      />
-
-      <motion.div
-        className="relative mx-4 flex max-w-xl flex-col items-center gap-4 rounded-[2.5rem] border border-cyan-400/40 bg-slate-950/80 px-10 pb-10 pt-12 text-center shadow-[0_0_120px_rgba(14,165,233,0.45)]"
-        initial={{ opacity: 0, scale: 0.96 }}
+        className="mx-auto flex h-full w-full max-w-6xl flex-col items-center gap-10 px-4 py-12 text-center sm:px-8"
+        initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.96 }}
+        exit={{ opacity: 0, scale: 0.98 }}
         transition={{ duration: 0.35, ease: "easeOut" }}
       >
+        <nav className="mt-4 flex w-full max-w-3xl items-center justify-center gap-4 sm:gap-6">
+          {steps.map((step, index) => {
+            const isActive = index === currentStepIndex;
+            const isCompleted = index < currentStepIndex;
+            return (
+              <div key={step.key} className="flex flex-1 flex-col items-center">
+                <div
+                  className={`flex h-11 w-11 items-center justify-center rounded-full border text-sm font-semibold transition ${
+                    isCompleted
+                      ? "border-emerald-400 bg-emerald-500/25 text-emerald-100"
+                      : isActive
+                      ? "border-cyan-300 bg-cyan-500/25 text-cyan-100"
+                      : "border-cyan-500/20 bg-slate-900/40 text-cyan-300/70"
+                  }`}
+                >
+                  {isCompleted ? <CheckIcon className="h-5 w-5" /> : index + 1}
+                </div>
+                <span
+                  className={`mt-2 text-xs font-semibold uppercase tracking-[0.3em] transition ${
+                    isActive || isCompleted ? "text-cyan-100" : "text-cyan-400/50"
+                  }`}
+                >
+                  {step.label}
+                </span>
+                {index < steps.length - 1 && (
+                  <div className="hidden h-px w-full translate-y-[22px] bg-cyan-500/20 sm:block" />
+                )}
+              </div>
+            );
+          })}
+        </nav>
+
         <AnimatePresence mode="wait" initial={false}>
           {stage === "intro" && (
             <motion.div
@@ -143,14 +189,15 @@ export const Launcher: FC<LauncherProps> = ({ loading, success }) => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={{ duration: 0.32, ease: "easeOut" }}
-              className="flex flex-col items-center gap-5"
+              className="flex w-full flex-col items-center gap-5"
             >
               <DotLottieReact
                 src={INTRO_LOTTIE}
                 loop={false}
                 autoplay
-                style={{ width: 140, height: 140 }}
+                style={{ width: "100%", height: "100%" }}
                 dotLottieRefCallback={attachIntroRef}
+                className="max-w-[520px]"
               />
               <span className="text-base font-semibold text-cyan-100/90">Contagem regressiva finalizada...</span>
             </motion.div>
@@ -163,13 +210,14 @@ export const Launcher: FC<LauncherProps> = ({ loading, success }) => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
               transition={{ duration: 0.28, ease: "easeOut" }}
-              className="flex flex-col items-center gap-5"
+              className="flex w-full flex-col items-center gap-5"
             >
               <DotLottieReact
                 src={LOADING_LOTTIE}
                 loop
                 autoplay
-                style={{ width: 130, height: 130 }}
+                style={{ width: "100%", height: "100%" }}
+                className="max-w-[520px]"
               />
               <span className="text-base font-medium text-cyan-200/85">Telemetria em tempo real...</span>
             </motion.div>
@@ -182,9 +230,15 @@ export const Launcher: FC<LauncherProps> = ({ loading, success }) => {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
-              className="flex flex-col items-center gap-5"
+              className="flex w-full flex-col items-center gap-5"
             >
-              <DotLottieReact src={SUCCESS_LOTTIE} loop={false} autoplay style={{ width: 140, height: 140 }} />
+              <DotLottieReact
+                src={SUCCESS_LOTTIE}
+                loop={false}
+                autoplay
+                style={{ width: "100%", height: "100%" }}
+                className="max-w-[520px]"
+              />
               <span className="text-base font-semibold text-emerald-300">Trajetória nominal confirmada!</span>
             </motion.div>
           )}
@@ -196,22 +250,43 @@ export const Launcher: FC<LauncherProps> = ({ loading, success }) => {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
-              className="flex flex-col items-center gap-5"
+              className="flex w-full flex-col items-center gap-5"
             >
-              <DotLottieReact src={FAILURE_LOTTIE} loop={false} autoplay style={{ width: 140, height: 140 }} />
+              <DotLottieReact
+                src={FAILURE_LOTTIE}
+                loop={false}
+                autoplay
+                style={{ width: "100%", height: "100%" }}
+                className="max-w-[520px]"
+              />
               <span className="text-base font-semibold text-rose-300">Abortado. Ajuste seu plano e tente novamente.</span>
             </motion.div>
           )}
         </AnimatePresence>
 
-        <div className="max-w-sm">
-          <h3 className="text-2xl font-semibold text-cyan-50">{statusCopy.title}</h3>
-          <p className="mt-2 text-base text-cyan-100/85">{statusCopy.description}</p>
+        <div className="max-w-xl space-y-3">
+          <h3 className="text-3xl font-semibold text-cyan-50 sm:text-4xl">{statusCopy.title}</h3>
+          <p className="text-base text-cyan-100/85 sm:text-lg">{statusCopy.description}</p>
         </div>
       </motion.div>
     </div>
   );
 };
+
+const CheckIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2.2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M5 12l4.5 4.5L19 7" />
+  </svg>
+);
 
 export default Launcher;
 
