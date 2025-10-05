@@ -228,7 +228,7 @@
             "type": "full_hygiene_station",
             "name": "Full Hygiene Station",
             "description": "Water-efficient hygiene hall with EVA decontamination bay and laundry loops.",
-            "numberofBlocks": 6,
+            "numberofBlocks": 12,
             "goodWith": [
                 {
                     "uuid": "module-exercise-permanent",

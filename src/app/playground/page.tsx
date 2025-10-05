@@ -15,14 +15,18 @@ import {
   type MissionEventCategory,
   type RelationshipInsight,
 } from "@/app/jotai/moduleMakerConfigAtom";
-import { ModuleRelationships, ModuleTypes as RelationshipModuleTypes } from "@/utils/moduleRelationShip";
+import { ModuleRelationships } from "@/utils/moduleRelationShip";
 import {
   DEFAULT_MODULE_LOTTIE,
   MODULE_LOTTIE_MAP,
   MODULE_BACKGROUND_MAP,
   DEFAULT_MODULE_TEXTURES,
-  MODULE_WALL_MAP,
-  DEFAULT_MODULE_WALLS,
+  WALL_HORIZONTAL_TEXTURES,
+  WALL_VERTICAL_TEXTURE,
+  WALL_DOOR_TEXTURE,
+  buildModuleTexturePlan,
+  moduleHasSpecialPatterns,
+  type ModuleAssetType,
 } from "@/utils/moduleLottieMap";
 import { habitatPlanService } from "@/utils/calculateRelationShipScore";
 import { evaluatePlacementRules } from "@/utils/playgroundRules";
@@ -45,10 +49,6 @@ import {
   MOBILE_RESERVED_VERTICAL,
   DESKTOP_RESERVED_VERTICAL,
 } from "@/utils/cellSizing";
-
-const RELATIONSHIP_MODULE_TYPES = new Set<string>(RelationshipModuleTypes.options as readonly string[]);
-
-const isRelationshipModuleType = (value: string): value is HabitatModuleType => RELATIONSHIP_MODULE_TYPES.has(value);
 
 const formatModuleLabel = (value: string) =>
   value
@@ -130,13 +130,24 @@ export default function Page() {
     (textureUrl: string) => {
       const cache = textureCacheRef.current;
       let image = cache.get(textureUrl);
+
       if (image && image.complete) {
-        return image;
+        if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+          return image;
+        }
+        cache.delete(textureUrl);
+        image = undefined;
       }
+
       if (!image) {
         image = new Image();
+        image.decoding = "async";
         image.onload = () => {
-          setTextureVersion((prev) => prev + 1);
+          if (image && image.naturalWidth > 0 && image.naturalHeight > 0) {
+            setTextureVersion((prev) => prev + 1);
+          } else {
+            cache.delete(textureUrl);
+          }
         };
         image.onerror = () => {
           cache.delete(textureUrl);
@@ -144,7 +155,8 @@ export default function Page() {
         image.src = textureUrl;
         cache.set(textureUrl, image);
       }
-      return image.complete ? image : null;
+
+      return image.complete && image.naturalWidth > 0 && image.naturalHeight > 0 ? image : null;
     },
     []
   );
@@ -165,9 +177,66 @@ export default function Page() {
     []
   );
 
-  const resolveWallTextures = useCallback(
-    (assetType: CellData["assetType"]) =>
-      MODULE_WALL_MAP[assetType as keyof typeof MODULE_WALL_MAP] ?? DEFAULT_MODULE_WALLS,
+  const updateModuleTexturesForConnectedCells = useCallback(
+    (
+      assetId: string,
+      moduleType: ModuleAssetType,
+      floorMap: Map<string, CellData>,
+      force = false
+    ) => {
+      if (!moduleHasSpecialPatterns(moduleType)) {
+        return;
+      }
+
+      const cellsWithSameAsset = Array.from(floorMap.entries())
+        .filter(([, cellData]) => cellData.assetId === assetId && cellData.assetType === moduleType)
+        .map(([key, cellData]) => {
+          const [x, y] = key.split(",").map(Number);
+          return { key, x, y, cellData };
+        });
+
+      if (!cellsWithSameAsset.length) {
+        return;
+      }
+
+      if (!force && cellsWithSameAsset.length <= 1) {
+        return;
+      }
+
+      const plan = buildModuleTexturePlan(
+        moduleType,
+        cellsWithSameAsset.map(({ key, x, y }) => ({ key, x, y }))
+      );
+
+      const sortedCells = [...cellsWithSameAsset].sort((a, b) =>
+        a.y === b.y ? a.x - b.x : a.y - b.y
+      );
+
+      const fallbackTextures = MODULE_BACKGROUND_MAP[moduleType] ?? DEFAULT_MODULE_TEXTURES;
+      const normalTextures = plan.normalTextures.length ? plan.normalTextures : fallbackTextures;
+      let normalIndex = 0;
+      const startingIndex = plan.nextIndex;
+
+      sortedCells.forEach(({ key, cellData }) => {
+        const special = plan.specialAssignments[key];
+        if (special) {
+          floorMap.set(key, {
+            ...cellData,
+            textureUrl: special.textureUrl,
+            textureIndex: special.textureIndex,
+          });
+          return;
+        }
+
+        const textureUrl = normalTextures[normalIndex % normalTextures.length];
+        floorMap.set(key, {
+          ...cellData,
+          textureUrl,
+          textureIndex: startingIndex + normalIndex,
+        });
+        normalIndex += 1;
+      });
+    },
     []
   );
 
@@ -186,15 +255,22 @@ export default function Page() {
       type: MissionEventType = "info",
       category: MissionEventCategory = "general"
     ) => {
-      const id = createEventId();
-      const timestamp = Date.now();
-
       setUser((prev) => {
-        const entry = { id, description: message, delta, timestamp, type, category };
-        const missionHistory = [entry, ...prev.missionHistory].slice(0, 20);
+        const entry = {
+          id: createEventId(),
+          description: message,
+          delta,
+          timestamp: Date.now(),
+          type,
+          category,
+        };
+
+        const nextHistory = [entry, ...(prev.missionHistory ?? [])].slice(0, 50);
+
         return {
           ...prev,
-          missionHistory,
+          score: Math.max(0, (prev.score ?? 0) + delta),
+          missionHistory: nextHistory,
         };
       });
     },
@@ -204,35 +280,33 @@ export default function Page() {
   useEffect(() => {
     let cancelled = false;
 
-    const buildRequestFloors = () => {
-      return floors.map((floor, index) => {
-        const width = Math.max(0, floor.x);
-        const height = Math.max(0, floor.y);
-        const matrix: Array<Array<{ type: HabitatModuleType } | null>> = Array.from({ length: width }, () =>
-          Array.from({ length: height }, () => null)
-        );
-
+    const buildRequestFloors = () =>
+      floors.map((floor, index) => {
         const floorKey = (floor.level ?? index) as FloorIdentifier;
-        const floorCells = paintedFloors.get(floorKey);
+        const floorMap = paintedFloors.get(floorKey) ?? new Map<string, CellData>();
+        const matrix: ({ type: HabitatModuleType } | null)[][] = [];
 
-        floorCells?.forEach((cellData, key) => {
-          const [cellX, cellY] = key.split(",").map(Number);
-          if (!Number.isFinite(cellX) || !Number.isFinite(cellY)) return;
-          if (!matrix[cellX] || cellY >= matrix[cellX].length) return;
+        for (let x = 0; x < floor.x; x += 1) {
+          const column: ({ type: HabitatModuleType } | null)[] = [];
+          for (let y = 0; y < floor.y; y += 1) {
+            const cell = floorMap.get(`${x},${y}`);
+            if (!cell || cell.assetType === "corridor") {
+              column.push(null);
+              continue;
+            }
 
-          const assetType = cellData.assetType;
-          if (typeof assetType !== "string") return;
-          if (!isRelationshipModuleType(assetType)) return;
-
-          matrix[cellX][cellY] = { type: assetType };
-        });
+            column.push({ type: cell.assetType as HabitatModuleType });
+          }
+          matrix.push(column);
+        }
 
         return { matrix };
       });
-    };
 
     const hasModulesPlaced = (requestFloors: ReturnType<typeof buildRequestFloors>) =>
-      requestFloors.some((floor) => floor.matrix.some((column) => column.some((cell) => cell !== null)));
+      requestFloors.some((floor) =>
+        floor.matrix.some((column) => column.some((cell) => cell !== null))
+      );
 
     const evaluateRelationships = async () => {
       if (!floors.length) {
@@ -274,7 +348,8 @@ export default function Page() {
             (item) => item.type === factor.module_type && item.with === factor.with_module_type
           );
 
-          const message = relation?.brief_reason ??
+          const message =
+            relation?.brief_reason ??
             `Conflito entre ${formatModuleLabel(factor.module_type)} e ${formatModuleLabel(factor.with_module_type)}.`;
 
           logMissionEvent(message, factor.points, "error", "module_relationship");
@@ -594,21 +669,34 @@ export default function Page() {
       ctx.restore();
     };
 
+    const horizontalTextures = WALL_HORIZONTAL_TEXTURES.length
+      ? WALL_HORIZONTAL_TEXTURES
+      : [WALL_VERTICAL_TEXTURE];
+
+    const selectHorizontalTexture = (gridX: number, gridY: number) =>
+      horizontalTextures[(gridX + gridY) % horizontalTextures.length] ?? horizontalTextures[0];
+
+    const shouldPlaceDoor = (a: CellData, b: CellData) =>
+      a.assetType === "corridor" || b.assetType === "corridor";
+
     cellEntries.forEach(([key, cell]) => {
       const [x, y] = key.split(",").map(Number);
-      const wallTextures = resolveWallTextures(cell.assetType);
 
       if (y > 0) {
         const neighborAbove = currentCells.get(`${x},${y - 1}`);
         if (neighborAbove && neighborAbove.assetId !== cell.assetId) {
-          drawWallSegment(wallTextures.up, x, y, "horizontal");
+          const textureUrl = selectHorizontalTexture(x, y);
+          drawWallSegment(textureUrl, x, y, "horizontal");
         }
       }
 
       if (x > 0) {
         const neighborLeft = currentCells.get(`${x - 1},${y}`);
         if (neighborLeft && neighborLeft.assetId !== cell.assetId) {
-          drawWallSegment(wallTextures.down, x, y, "vertical");
+          const textureUrl = shouldPlaceDoor(cell, neighborLeft)
+            ? WALL_DOOR_TEXTURE
+            : WALL_VERTICAL_TEXTURE;
+          drawWallSegment(textureUrl, x, y, "vertical");
         }
       }
     });
@@ -645,7 +733,6 @@ export default function Page() {
     floorIdentifier,
     isMovingGroup,
     movingGroup,
-    resolveWallTextures,
     floors,
     paintedFloors,
     selectedFloorIndex,
@@ -762,6 +849,16 @@ export default function Page() {
           const next = new Map(prev);
           const floorMap = new Map(next.get(floorIdentifier) ?? []);
           floorMap.delete(key);
+
+          if (moduleHasSpecialPatterns(existingCell.assetType)) {
+            updateModuleTexturesForConnectedCells(
+              existingCell.assetId,
+              existingCell.assetType,
+              floorMap,
+              true
+            );
+          }
+
           next.set(floorIdentifier, floorMap);
           return next;
         });
@@ -812,14 +909,19 @@ export default function Page() {
             textureIndex,
           };
           floorMap.set(key, cellValue);
+          
+          if (moduleHasSpecialPatterns(selectedAsset.type)) {
+            updateModuleTexturesForConnectedCells(selectedAsset.id, selectedAsset.type, floorMap);
+          }
+          
           next.set(floorIdentifier, floorMap);
           return next;
         });
 
-        const floorLabel = currentFloor?.level ?? selectedFloorIndex + 1;
-        const coords = `(${x + 1}, ${y + 1})`;
-        const moduleLabel = selectedAsset.label ?? selectedAsset.type;
-  logMissionEvent(`Módulo ${moduleLabel} posicionado em ${coords} no piso ${floorLabel}.`, 0, "success");
+    const floorLabel = currentFloor?.level ?? selectedFloorIndex + 1;
+    const coords = `(${x + 1}, ${y + 1})`;
+    const moduleLabel = selectedAsset.label ?? selectedAsset.type;
+    logMissionEvent(`Módulo ${moduleLabel} posicionado em ${coords} no piso ${floorLabel}.`, 0, "success");
 
         const baseFloor = floors[0];
         if (baseFloor) {
@@ -848,6 +950,9 @@ export default function Page() {
       selectedTool,
       triggerCellFlash,
       logMissionEvent,
+      setAssetRemaining,
+      setPaintedFloors,
+      updateModuleTexturesForConnectedCells,
     ]
   );
 
@@ -912,6 +1017,16 @@ export default function Page() {
             floorMap.set(targetKey, cell.value);
           });
 
+          const firstCell = cells[0];
+          if (firstCell && moduleHasSpecialPatterns(firstCell.value.assetType)) {
+            updateModuleTexturesForConnectedCells(
+              firstCell.value.assetId,
+              firstCell.value.assetType,
+              floorMap,
+              true
+            );
+          }
+
           next.set(floorIdentifier, floorMap);
           return next;
         });
@@ -921,7 +1036,7 @@ export default function Page() {
     setMovingGroup(null);
     setIsMovingGroup(false);
     setIsPainting(false);
-  }, [floorIdentifier, isMovingGroup, movingGroup]);
+  }, [floorIdentifier, isMovingGroup, movingGroup, updateModuleTexturesForConnectedCells]);
 
   const handleMouseDown = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -962,6 +1077,11 @@ export default function Page() {
     finishInteraction();
   }, [finishInteraction]);
 
+  const handleAssetsChange = useCallback((assetsList: SelectedAsset[]) => {
+    assetRegistryRef.current = new Map(assetsList.map((asset) => [asset.id, asset]));
+    setAssetRegistryVersion((prev) => prev + 1);
+  }, []);
+
   const handleSelectTool: ToolsProps["onSelectTool"] = useCallback((tool) => {
     setSelectedTool(tool.name);
     setSelectedAssetId(null);
@@ -997,34 +1117,9 @@ export default function Page() {
       launchTimerRef.current = null;
       postLaunchTimerRef.current = setTimeout(() => {
         router.push("/relatorios");
-      }, 2000);
-    }, 3000);
+      }, 3500);
+    }, 2500);
   }, [router]);
-
-  const handleAssetsChange = useCallback(
-    (updatedAssets: SelectedAsset[]) => {
-      assetRegistryRef.current = new Map(updatedAssets.map((asset) => [asset.id, asset]));
-      setAssetRegistryVersion((prev) => prev + 1);
-      if (selectedAssetId) {
-        const current = assetRegistryRef.current.get(selectedAssetId);
-        if (current) {
-          setAssetRemaining(current.remaining);
-        } else {
-          setSelectedAssetId(null);
-          setAssetRemaining(0);
-        }
-      }
-    },
-    [selectedAssetId]
-  );
-
-  if (!currentFloor) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-cyan-200">
-        Nenhuma configuração de piso disponível.
-      </div>
-    );
-  }
 
   const boardPixelWidth = currentFloor ? currentFloor.x * cellSize : 0;
   const boardPixelHeight = currentFloor ? currentFloor.y * cellSize : 0;
