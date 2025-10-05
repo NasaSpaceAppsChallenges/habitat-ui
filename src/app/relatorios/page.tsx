@@ -417,11 +417,6 @@ export default function RelatoriosPage() {
                           <span className="truncate" title={item.name}>
                             {item.name}
                           </span>
-                          {item.isMock ? (
-                            <span className="ml-2 shrink-0 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[0.55rem] font-semibold tracking-[0.3em] text-cyan-100/80">
-                              Mock
-                            </span>
-                          ) : null}
                         </figcaption>
                       </figure>
                     ))}
@@ -615,11 +610,6 @@ export default function RelatoriosPage() {
                 <span className="rounded-full border border-cyan-400/40 bg-slate-900/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em]">
                   {modalImage.name}
                 </span>
-                {modalImage.isMock ? (
-                  <span className="rounded-full border border-cyan-500/25 bg-cyan-500/15 px-3 py-1 text-[0.55rem] font-semibold uppercase tracking-[0.35em] text-cyan-100/85">
-                    Mock
-                  </span>
-                ) : null}
                 <span className="text-[11px] uppercase tracking-[0.28em] text-cyan-200/70">
                   Toque em qualquer lugar para fechar
                 </span>
