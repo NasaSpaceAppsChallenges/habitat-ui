@@ -102,10 +102,35 @@ export const evaluatePlacementRules = (context: PlacementRuleContext): Placement
       ] as const;
 
       const neighborsInBounds = neighborPositions.filter((pos) => withinBounds(pos.x, pos.y));
+      const toKey = (x: number, y: number) => `${x},${y}`;
+
+      if (selectedAsset.type !== "corridor") {
+        const existingCellsForAsset = Array.from(currentCells.values()).filter(
+          (cell) => cell.assetType === selectedAsset.type && cell.assetId !== selectedAsset.id
+        );
+
+        if (existingCellsForAsset.length > 0) {
+          const touchesExisting = neighborsInBounds.some((pos) => {
+            const neighbor = currentCells.get(toKey(pos.x, pos.y));
+            return neighbor?.assetType === selectedAsset.type;
+          });
+
+          if (!touchesExisting) {
+            return {
+              allowed: false,
+              violation: {
+                message: "Mantenha os blocos do módulo conectados ortogonalmente.",
+                type: "warning",
+                shouldFlash: true,
+              },
+            };
+          }
+        }
+      }
 
       if (neighborsInBounds.length === neighborPositions.length) {
         const neighborCells = neighborsInBounds
-          .map((pos) => currentCells.get(`${pos.x},${pos.y}`))
+          .map((pos) => currentCells.get(toKey(pos.x, pos.y)))
           .filter((cell): cell is CellData => Boolean(cell));
 
         if (neighborCells.length === neighborPositions.length) {
