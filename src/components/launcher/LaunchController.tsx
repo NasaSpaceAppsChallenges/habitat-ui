@@ -181,16 +181,14 @@ export function LaunchController({
       const eventTimestamp = new Date().toISOString();
       const resolvedScore = Number.isFinite(rawResult.score) ? rawResult.score : user.score;
       const normalizedImages = normalizeImages(rawResult.images);
-      const hasPdfPayload = Boolean(rawResult.pdfBase64);
-      const pdfMimeType = hasPdfPayload ? rawResult.pdfMimeType ?? "application/pdf" : undefined;
-      const pdfFileName = hasPdfPayload
-        ? rawResult.pdfFileName ?? makeReportFileName(resolvedMissionName)
-        : undefined;
+  const pdfBase64 = rawResult.pdfBase64?.trim() ?? "";
+      const pdfMimeType = rawResult.pdfMimeType ?? "application/pdf";
+      const pdfFileName = rawResult.pdfFileName ?? makeReportFileName(resolvedMissionName);
 
       const normalizedResult: LaunchMissionResponse = {
         ...rawResult,
         score: resolvedScore,
-        pdfBase64: rawResult.pdfBase64 ?? "",
+        pdfBase64,
         pdfMimeType,
         pdfFileName,
         images: normalizedImages.map(({ name, base64, mimeType }) => ({ name, base64, mimeType })),
@@ -215,13 +213,11 @@ export function LaunchController({
           normalizedResult.message ??
           (launchPhase === "success" ? "Plano aprovado." : "Plano rejeitado."),
         score: resolvedScore,
-        pdf: hasPdfPayload
-          ? {
-              base64: normalizedResult.pdfBase64,
-              mimeType: normalizedResult.pdfMimeType ?? "application/pdf",
-              fileName: normalizedResult.pdfFileName ?? makeReportFileName(resolvedMissionName),
-            }
-          : null,
+        pdf: {
+          base64: normalizedResult.pdfBase64,
+          mimeType: normalizedResult.pdfMimeType ?? "application/pdf",
+          fileName: normalizedResult.pdfFileName ?? makeReportFileName(resolvedMissionName),
+        },
         images: normalizedImages.map(({ name, base64, mimeType }) => ({ name, base64, mimeType })),
         gallery: normalizedImages.map((entry) => entry.dataUrl),
         worsePoints: normalizedResult.worsePoints,
