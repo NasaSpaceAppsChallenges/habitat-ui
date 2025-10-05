@@ -1,16 +1,16 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 
 import {
   missionReportAtom,
   moduleMakerConfigAtom,
   type MissionReportState,
 } from "@/app/jotai/moduleMakerConfigAtom";
-import { playerLanunchStatusAtom } from "@/app/jotai/playerlaunchStatusAtom";
+import { playerLanunchStatusAtom, type PlayerLaunchStatus } from "@/app/jotai/playerlaunchStatusAtom";
 import { makeReportFileName, normalizeImages } from "@/app/playground/functions/helpers";
 
 const formatModuleType = (value: string | undefined) => {
@@ -35,12 +35,35 @@ const formatDateTime = (iso: string | undefined) => {
 };
 
 export default function RelatoriosPage() {
-  console.log('teste')
   const missionReport = useAtomValue(missionReportAtom);
   const missionConfig = useAtomValue(moduleMakerConfigAtom);
   const playerLaunchStatus = useAtomValue(playerLanunchStatusAtom);
+  const setPlayerLaunchStatus = useSetAtom(playerLanunchStatusAtom);
 
-  console.log(playerLaunchStatus)
+
+  console.log("playerLaunchStatus", playerLaunchStatus);
+  useEffect(() => {
+    if (playerLaunchStatus.response) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const stored = window.sessionStorage.getItem("player-launch-status");
+      if (!stored) {
+        return;
+      }
+      const parsed = JSON.parse(stored) as PlayerLaunchStatus | null;
+      if (!parsed?.response) {
+        return;
+      }
+      setPlayerLaunchStatus(parsed);
+    } catch (storageError) {
+      console.warn("Não foi possível restaurar o status do lançamento da sessão.", storageError);
+    }
+  }, [playerLaunchStatus.response, setPlayerLaunchStatus]);
 
   const fallbackReport = useMemo<MissionReportState | null>(() => {
     const response = playerLaunchStatus.response;

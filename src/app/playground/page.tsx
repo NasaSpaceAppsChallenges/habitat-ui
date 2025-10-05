@@ -21,7 +21,7 @@ import {
   type MissionEventCategory,
   type RelationshipInsight,
 } from "@/app/jotai/moduleMakerConfigAtom";
-import { playerLanunchStatusAtom } from "@/app/jotai/playerlaunchStatusAtom";
+import { playerLanunchStatusAtom, type PlayerLaunchStatus } from "@/app/jotai/playerlaunchStatusAtom";
 import { ModuleRelationships } from "@/utils/moduleRelationShip";
 import {
   DEFAULT_MODULE_LOTTIE,
@@ -1291,8 +1291,22 @@ export default function Page() {
       launchControllerRef.current = null;
     }
 
-  setMissionReport(null);
-  setPlayerLaunchStatus({ phase: "launching", response: null, lastUpdatedAt: null });
+    setMissionReport(null);
+    const persistLaunchStatus = (status: PlayerLaunchStatus) => {
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      try {
+        window.sessionStorage.setItem("player-launch-status", JSON.stringify(status));
+      } catch (storageError) {
+        console.warn("Não foi possível persistir o status de lançamento.", storageError);
+      }
+    };
+
+    const initialStatus: PlayerLaunchStatus = { phase: "launching", response: null, lastUpdatedAt: null };
+    setPlayerLaunchStatus(initialStatus);
+    persistLaunchStatus(initialStatus);
     const controller = new AbortController();
     launchControllerRef.current = controller;
 
@@ -1320,7 +1334,6 @@ export default function Page() {
         }
         throw new Error(fallbackMessage);
       }
-
       const rawResult = (await response.json()) as LaunchMissionResponse;
 
       if (controller.signal.aborted) {
@@ -1355,11 +1368,14 @@ export default function Page() {
       };
       const launchPhase: "success" | "failure" = resolvedScore > 0 ? "success" : "failure";
 
-      setPlayerLaunchStatus({
+      const successStatus: PlayerLaunchStatus = {
         phase: launchPhase,
         response: normalizedResult,
         lastUpdatedAt: receivedAt,
-      });
+      };
+
+      setPlayerLaunchStatus(successStatus);
+      persistLaunchStatus(successStatus);
 
       setMissionReport({
         status: launchPhase === "success" ? "success" : "error",
@@ -1437,7 +1453,14 @@ export default function Page() {
         receivedAt: failureTimestamp,
       });
 
-      setPlayerLaunchStatus({ phase: "failure", response: fallbackResponse, lastUpdatedAt: failureTimestamp });
+      const failureStatus: PlayerLaunchStatus = {
+        phase: "failure",
+        response: fallbackResponse,
+        lastUpdatedAt: failureTimestamp,
+      };
+
+      setPlayerLaunchStatus(failureStatus);
+      persistLaunchStatus(failureStatus);
       setLaunchState({ active: true, loading: false, success: false });
       logMissionEvent(message, 0, "error");
 

@@ -3,6 +3,7 @@
 import { FC, useCallback, useEffect, useMemo, useState } from "react";
 
 import { ToolsCarrousel } from "./carrousel";
+import { SoundToggle } from "./SoundToggle";
 import type { Asset, AssetType, IAsset, ITool, IconComponent, ToolName } from "./types";
 import { toolNames } from "./types";
 
@@ -199,7 +200,7 @@ export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, on
   );
 
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col items-center gap-5">
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-cyan-500/30 bg-slate-950/80 text-cyan-100 shadow-lg shadow-cyan-500/10 p-2">
         {toolNames.map(renderToolButton)}
       </div>
@@ -211,6 +212,10 @@ export const Tools: FC<ToolsProps> = ({ assets: incomingAssets, onSelectTool, on
         onLaunch={onLaunch}
         launching={launching}
       />
+
+      <div className="h-px w-full max-w-[260px] bg-cyan-500/30" />
+
+      <SoundToggle />
     </div>
   );
 };
