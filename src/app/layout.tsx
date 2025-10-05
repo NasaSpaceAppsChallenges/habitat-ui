@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { JotaiProviders } from "@/components/JotaiProvider";
+import { DeviceOrientationGuard } from "@/components/DeviceOrientationGuard";
 import Script from "next/script";
+import "./globals.css"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,7 +35,9 @@ export default function RootLayout({
 					strategy="beforeInteractive"
 				/>
         <JotaiProviders>
-          {children}
+          <DeviceOrientationGuard>
+            {children}
+          </DeviceOrientationGuard>
         </JotaiProviders>
       </body>
     </html>

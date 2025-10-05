@@ -7,7 +7,6 @@ import PlayerScore from "@/components/PlayerScore";
 import { Tools } from "@/components/tools/index";
 import Launcher from "@/components/launcher";
 import NavBar from "@/components/NavBar";
-import "./playground.css";
 import {
   moduleMakerConfigAtom,
   userAtom,
