@@ -6,7 +6,6 @@ import FloorSelector, { type FloorSummary } from "@/components/FloorSelector";
 import PlayerScore from "@/components/PlayerScore";
 import { Tools } from "@/components/tools/index";
 import Launcher from "@/components/launcher";
-import NavBar from "@/components/NavBar";
 import {
   formatModuleLabel,
   makeReportFileName,
@@ -1488,8 +1487,7 @@ export default function Page() {
 
   return (
     <>
-      <NavBar />
-      <div className="min-h-[100dvh] overflow-hidden bg-slate-950 pb-6 pt-14 text-cyan-100 md:pt-22">
+      <div className="min-h-[100dvh] overflow-hidden bg-slate-950 pb-6 pt-8 text-cyan-100 md:pt-14">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 sm:px-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex flex-col gap-3">
