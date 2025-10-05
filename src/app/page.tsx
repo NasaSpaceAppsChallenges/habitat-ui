@@ -1,9 +1,14 @@
 "use client";
-
+import "./page.module.css"
 import React from "react";
 import {createComponent} from '@lit/react';
 import '@leandrodasilva/welcome-page/slider-astrounauts';
 import '@leandrodasilva/welcome-page/mission-step';
+import '@leandrodasilva/welcome-page/moon-icon';
+import '@leandrodasilva/welcome-page/mars-icon';
+import '@leandrodasilva/welcome-page/play-button';
+import '@leandrodasilva/welcome-page/astronauts-step';
+import '@leandrodasilva/welcome-page/floating-in-space';
 import {WelcomePage} from '@leandrodasilva/welcome-page';
 import {useRouter} from "next/navigation";
 
@@ -24,6 +29,7 @@ export default function Home() {
 	}
   return (
 		<Widget
+			className="welcome-page"
 			submit={handleSubmit}
 		/>
 	)

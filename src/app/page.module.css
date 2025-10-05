@@ -1,0 +1,6 @@
+.welcome-page > * {
+    box-sizing: border-box;
+    margin: auto !important;
+    padding: 16px !important;
+    border: 0 solid;
+}
