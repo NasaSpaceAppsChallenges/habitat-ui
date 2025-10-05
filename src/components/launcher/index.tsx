@@ -167,7 +167,7 @@ export const Launcher: FC<LauncherProps> = ({ loading, success }) => {
                   {isCompleted ? <CheckIcon className="h-5 w-5" /> : index + 1}
                 </div>
                 <span
-                  className={`mt-2 text-xs font-semibold uppercase tracking-[0.3em] transition ${
+                  className={`mt-2 text-[0.625rem] font-semibold uppercase tracking-[0.3em] transition sm:text-xs ${
                     isActive || isCompleted ? "text-cyan-100" : "text-cyan-400/50"
                   }`}
                 >

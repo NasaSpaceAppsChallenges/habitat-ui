@@ -9,22 +9,6 @@ import type {
 } from "@/types/api";
 import type { RelationshipInsight } from "@/app/jotai/moduleMakerConfigAtom";
 
-const resolveMissionEvaluateUrl = () => {
-  const baseUrl = process.env.HABITAT_API ?? process.env.HABITAT_SCALAR_API;
-  if (!baseUrl) {
-    return null;
-  }
-
-  try {
-    const normalized = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-    return new URL("mission/evaluate", normalized).toString();
-  } catch (error) {
-    console.warn("Variável HABITAT_API/HABITAT_SCALAR_API contém um valor inválido.", error);
-    return null;
-  }
-};
-
-const API_URL = resolveMissionEvaluateUrl();
 
 const resolveRequestTimeout = () => {
   const raw = process.env.HABITAT_API_TIMEOUT_MS;
@@ -99,10 +83,6 @@ const mapExternalResponse = (
 };
 
 const callExternalApi = async (payload: LaunchMissionRequest): Promise<LaunchMissionResponse> => {
-  if (!API_URL) {
-    throw new Error("Endpoint HABITAT_API/HABITAT_SCALAR_API não configurado.");
-  }
-
   let controller: AbortController | null = null;
   let timeout: NodeJS.Timeout | null = null;
 
@@ -112,7 +92,7 @@ const callExternalApi = async (payload: LaunchMissionRequest): Promise<LaunchMis
   }
 
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch("https://nsa2025.linkai.me/api/mission/evaluate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
